@@ -1,0 +1,2 @@
+import {normalize} from './_data.js';
+export default async function handler(req,res){const q=String(req.query.q||'').slice(0,100);if(!q)return res.status(400).json({tokens:[]});try{const r=await fetch('https://api.dexscreener.com/latest/dex/search?q='+encodeURIComponent(q));const d=await r.json();res.setHeader('Cache-Control','s-maxage=30');res.status(200).json({tokens:(d.pairs||[]).slice(0,15).map(normalize).sort((a,b)=>b.liq-a.liq)})}catch(e){res.status(502).json({tokens:[]})}}
