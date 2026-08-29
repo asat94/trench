@@ -11,16 +11,19 @@ const Change = ({ value }) => <b className={Number(value) >= 0 ? 'up' : 'down'}>
 const Score = ({ value }) => <span className={`score ${value > 79 ? 'hot' : value > 69 ? 'warm' : ''}`}>{value}</span>;
 
 function TokenPanel({ token, close, saved, setSaved }) {
+  const [copied, setCopied] = useState(false);
   if (!token) return null;
   const savedAlready = saved.includes(token.symbol);
+  const copy = () => navigator.clipboard?.writeText(token.address).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); });
   return <div className="shade" onClick={close}><section className="drawer" onClick={(event) => event.stopPropagation()}>
     <button className="close" onClick={close}><X /></button>
     <div className="asset big"><Coin token={token} /><span><h2>{token.name}</h2><p>{token.symbol} · <Tag>{token.chain}</Tag></p></span></div>
     <div className="price"><strong>{token.price}</strong> <Change value={token.change} /> <span>24h</span></div>
+    <div className="why tokenaddress"><h3>Contract address</h3>{token.address ? <button className="address" onClick={copy}>{token.address.slice(0, 10)}…{token.address.slice(-8)} <Copy size={14} /> {copied ? 'Copied' : 'Copy CA'}</button> : <p>Contract address was not supplied by this live feed.</p>}</div>
     <div className="signal"><Sparkles size={16} /><span><b>{token.signal || 'Live market activity'}</b><small>{token.reason || 'Live market-ranking data'}</small></span></div>
     <div className="stats">{[['Market cap', fmt(token.cap)], ['Liquidity', fmt(token.liq)], ['24h volume', fmt(token.vol)], ['Pair age', token.age], ['Trench score', <Score value={token.score} />]].map(([label, value]) => <div key={label}><span>{label}</span><b>{value}</b></div>)}</div>
     <div className="why"><h3>Why it’s on radar</h3><p>This score combines market activity, liquidity, momentum and pair age. It is for discovery only—not financial advice.</p></div>
-    <a className="dex" target="_blank" rel="noreferrer" href={token.url || 'https://dexscreener.com'}>Open market page <ExternalLink size={16} /></a>
+    <a className="dex" target="_blank" rel="noreferrer" href={token.url || 'https://dexscreener.com'}>View on DexScreener <ExternalLink size={16} /></a>
     <button className="save" onClick={() => setSaved(savedAlready ? saved.filter((item) => item !== token.symbol) : [...saved, token.symbol])}>{savedAlready ? 'Saved to watchlist' : 'Add to watchlist'}</button>
   </section></div>;
 }
