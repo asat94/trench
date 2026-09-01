@@ -57,7 +57,20 @@ function TokenPanel({ token, close, saved, setSaved }) {
 function WalletPanel({ wallet, close }) {
   const [data, setData] = useState();
   const [copied, setCopied] = useState(false);
-  useEffect(() => { if (wallet) fetch(`/api/wallet?chain=${wallet.chain}&address=${encodeURIComponent(wallet.address)}`).then((r) => r.json()).then(setData).catch(() => setData({ error: 'Wallet data is temporarily unavailable' })); }, [wallet]);
+  useEffect(() => {
+    if (!wallet) return;
+    const key = `trench-wallet:${wallet.chain}:${wallet.address.toLowerCase()}`;
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem(key) || 'null'); } catch { saved = null; }
+    if (saved?.wallet) setData(saved);
+    if (saved?.cachedAt && Date.now() - saved.cachedAt < 30 * 60 * 1000) return;
+    fetch(`/api/wallet?chain=${wallet.chain}&address=${encodeURIComponent(wallet.address)}`).then((response) => response.json()).then((response) => {
+      if (response.wallet) {
+        setData(response);
+        localStorage.setItem(key, JSON.stringify(response));
+      } else if (!saved) setData(response);
+    }).catch(() => { if (!saved) setData({ error: 'Wallet data is temporarily unavailable' }); });
+  }, [wallet]);
   if (!wallet) return null;
   const profile = data?.wallet;
   const copy = () => navigator.clipboard?.writeText(wallet.address).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); });
