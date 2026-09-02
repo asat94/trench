@@ -8,6 +8,12 @@ const money = (value) => {
   const number = num(value), sign = number < 0 ? '-' : '', absolute = Math.abs(number);
   return sign + (absolute >= 1e6 ? `$${(absolute / 1e6).toFixed(2)}M` : absolute >= 1e3 ? `$${(absolute / 1e3).toFixed(1)}K` : `$${absolute.toFixed(0)}`);
 };
+const activityLabel = (value, fallback) => {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const text = typeof raw === 'object' ? (raw?.symbol || raw?.name || '') : String(raw || '');
+  const clean = text.trim();
+  return !clean || clean.includes(',') || clean.length > 32 ? fallback : clean;
+};
 
 function makeProfile(address, chain, stats, activityRaw) {
   const activityData = unwrap(activityRaw) || {};
@@ -32,8 +38,8 @@ function makeProfile(address, chain, stats, activityRaw) {
     activities: activities.slice(0, 12).map((item, index) => ({
       id: item.transaction_hash || index,
       type: String(item.type || item.event_type || 'trade').toUpperCase(),
-      symbol: item.token?.symbol || item.symbol || 'TOKEN',
-      name: item.token?.name || item.token?.symbol || 'Token',
+      symbol: activityLabel(item.token?.symbol || item.symbol, 'Unknown asset'),
+      name: activityLabel(item.token?.name || item.token?.symbol || item.symbol, 'Token'),
       amount: money(item.cost_usd),
       time: item.timestamp ? new Date(num(item.timestamp) * (num(item.timestamp) < 1e12 ? 1000 : 1)).toLocaleString() : ''
     }))

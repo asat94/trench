@@ -4,3 +4,4 @@
 @media(max-width:720px){.marketstrip{grid-template-columns:repeat(2,minmax(0,1fr))}.wallet{grid-template-columns:36px minmax(120px,1fr) auto;gap:8px}.walletcopy{grid-column:2}.walletopen{grid-column:3;grid-row:2}.wallet strong{grid-column:3;grid-row:1}.radarfilters section{display:grid;grid-template-columns:1fr;gap:8px;width:100%}.radarfilters section select{width:100%}.chain small{display:none}}
 .walletretry{margin-top:16px;border:1px solid #b6ff3b;border-radius:7px;padding:8px 11px;background:transparent;color:#b6ff3b;font:11px 'DM Mono';cursor:pointer}.walletretry:hover{background:#172115}
 .results button>span:nth-child(2),.results button small,.wallet>span,.wallet>span small{min-width:0;overflow:hidden;text-overflow:ellipsis}.results button small,.wallet>span small{white-space:nowrap}
+.activitylist>div>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
