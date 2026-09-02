@@ -48,7 +48,8 @@ async function loadProfile(address, chain) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=84600');
+  // Never let a transient provider error become a CDN-cached wallet error.
+  res.setHeader('Cache-Control', 'private, no-store');
   const chain = ['sol', 'bsc', 'base', 'eth', 'robinhood'].includes(req.query.chain) ? req.query.chain : 'sol';
   const address = String(req.query.address || '').trim();
   if (address.length < 20) return res.status(400).json({ error: 'A valid wallet address is required' });
@@ -56,7 +57,10 @@ export default async function handler(req, res) {
   const key = `trench:wallet:v2:${chain}:${address.toLowerCase()}`;
   const cached = await cacheGet(key);
   const fresh = cached && Date.now() - Number(cached.cachedAt || 0) < PROFILE_FRESH_FOR;
-  if (fresh) return res.status(200).json({ ...cached, cached: true });
+  if (fresh) {
+    res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=84600');
+    return res.status(200).json({ ...cached, cached: true });
+  }
 
   let request = pending.get(key);
   if (!request) {
@@ -69,9 +73,13 @@ export default async function handler(req, res) {
 
   try {
     const profile = await request;
+    res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=84600');
     return res.status(200).json({ ...profile, cached: false });
   } catch (error) {
-    if (cached) return res.status(200).json({ ...cached, cached: true, stale: true });
+    if (cached) {
+      res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=84600');
+      return res.status(200).json({ ...cached, cached: true, stale: true });
+    }
     return res.status(502).json({ error: error.message || 'Wallet data is temporarily unavailable' });
   }
 }
