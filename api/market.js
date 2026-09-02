@@ -14,6 +14,8 @@ const canonical = (value) => ({ sol: 'sol', solana: 'sol', bsc: 'bsc', bnb: 'bsc
 const dexChain = { sol: 'solana', bsc: 'bsc', base: 'base', eth: 'ethereum', robinhood: 'robinhood' };
 const chainIds = ['sol', 'bsc', 'base', 'eth', 'robinhood'];
 const SNAPSHOT_TTL = 7 * 24 * 60 * 60;
+const MARKET_CACHE_KEY = 'trench:market:payload:v1';
+const MARKET_REFRESH_FOR = 2 * 60 * 1000;
 let cached = { expires: 0, payload: null };
 
 function token(row, fallbackChain, index) {
@@ -37,9 +39,10 @@ function token(row, fallbackChain, index) {
   };
 }
 
-async function chainFeed(chain) {
+async function chainFeed(chain, refresh = false) {
   const key = `trench:market:chain:v1:${chain}`;
   const previous = await cacheGet(key);
+  if (previous?.data && !refresh) return { chain, data: previous.data };
   try {
     const data = await gmgn('/v1/market/rank', { chain, interval: '1h', limit: '18' });
     const payload = unwrap(data) || {};
@@ -52,22 +55,74 @@ async function chainFeed(chain) {
   return { chain, data: previous?.data || null };
 }
 
+function dexToken(pair, chain, index) {
+  const volume = Number(pair.volume?.h24 || 0);
+  const liquidity = Number(pair.liquidity?.usd || 0);
+  const cap = Number(pair.marketCap || pair.fdv || 0);
+  const change = Number(pair.priceChange?.h24 || 0);
+  const score = Math.max(8, Math.min(99, Math.round(35 + Math.min(22, Math.log10(volume + 1) * 3.5) + Math.min(15, Math.log10(liquidity + 1) * 2.8) + (change > 0 ? Math.min(14, change * .08) : -Math.min(42, Math.abs(change) * .45)))));
+  return {
+    name: pair.baseToken?.name || pair.baseToken?.symbol || 'Token', symbol: pair.baseToken?.symbol || 'TOKEN', chain: chainNames[chain], address: pair.baseToken?.address || '',
+    logo: pair.info?.imageUrl || '', price: pair.priceUsd ? (Number(pair.priceUsd) < .01 ? `$${Number(pair.priceUsd).toPrecision(3)}` : `$${Number(pair.priceUsd).toFixed(4)}`) : '—',
+    change, cap: cap / 1e6, vol: volume / 1e6, liq: liquidity / 1e6, age: pair.pairCreatedAt ? age(pair.pairCreatedAt / 1000) : '—', score,
+    signal: change <= -50 ? 'Heavy selloff' : change <= -15 ? 'Weak momentum' : volume > liquidity ? 'High activity' : 'Trending',
+    reason: 'Live DEX market data', color: colors[index % colors.length], url: pair.url || 'https://dexscreener.com'
+  };
+}
+
+async function dexFallback() {
+  const key = 'trench:market:dex-fallback:v1';
+  const previous = await cacheGet(key);
+  try {
+    const boosts = await fetch('https://api.dexscreener.com/token-boosts/top/v1', { signal: AbortSignal.timeout(6000) }).then((response) => response.ok ? response.json() : []);
+    const chainMap = { solana: 'sol', bsc: 'bsc', base: 'base', ethereum: 'eth' };
+    const grouped = new Map();
+    for (const item of Array.isArray(boosts) ? boosts : []) {
+      const chain = chainMap[item.chainId];
+      if (!chain || !item.tokenAddress) continue;
+      const list = grouped.get(chain) || [];
+      if (list.length < 30 && !list.includes(item.tokenAddress)) list.push(item.tokenAddress);
+      grouped.set(chain, list);
+    }
+    const pairs = await Promise.all([...grouped.entries()].map(async ([chain, addresses]) => {
+      const dexId = { sol: 'solana', bsc: 'bsc', base: 'base', eth: 'ethereum' }[chain];
+      const response = await fetch(`https://api.dexscreener.com/tokens/v1/${dexId}/${addresses.join(',')}`, { signal: AbortSignal.timeout(6000) });
+      const data = response.ok ? await response.json() : [];
+      return (Array.isArray(data) ? data : []).map((pair, index) => dexToken(pair, chain, index));
+    }));
+    const tokens = pairs.flat().filter((item) => item.vol > 0 && item.liq > 0).sort((a, b) => b.score - a.score).slice(0, 50);
+    if (tokens.length) {
+      await cacheSet(key, { tokens, cachedAt: Date.now() }, 30 * 60);
+      return tokens;
+    }
+  } catch { /* The previously saved fallback remains available. */ }
+  return previous?.tokens || [];
+}
+
 export default async function handler(req, res) {
-  res.setHeader('Cache-Control', 's-maxage=90, stale-while-revalidate=240');
-  if (cached.payload && Date.now() < cached.expires) return res.status(200).json(cached.payload);
+  const refresh = req.query.refresh === '1';
+  res.setHeader('Cache-Control', refresh ? 'private, no-store' : 's-maxage=90, stale-while-revalidate=240');
+  if (!refresh && cached.payload && Date.now() < cached.expires) return res.status(200).json(cached.payload);
+  const previousMarket = await cacheGet(MARKET_CACHE_KEY);
+  if (!refresh && previousMarket?.payload) return res.status(200).json(previousMarket.payload);
+  if (refresh && previousMarket?.payload && Date.now() - Number(previousMarket.cachedAt || 0) < MARKET_REFRESH_FOR) return res.status(200).json(previousMarket.payload);
   try {
     const [feeds, global, prices] = await Promise.all([
-      Promise.all(chainIds.map(chainFeed)),
+      Promise.all(chainIds.map((chain) => chainFeed(chain, refresh))),
       fetch('https://api.coingecko.com/api/v3/global', { signal: AbortSignal.timeout(6000) }).then((response) => response.ok ? response.json() : null).catch(() => null),
       fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana,binancecoin&vs_currencies=usd&include_24hr_change=true', { signal: AbortSignal.timeout(6000) }).then((response) => response.ok ? response.json() : null).catch(() => null)
     ]);
-    const allTokens = feeds.flatMap(({ chain, data }) => {
+    let allTokens = feeds.flatMap(({ chain, data }) => {
       const payload = unwrap(data) || {};
       const rows = payload.rank || payload.list || [];
       return rows.map((row, index) => token(row, chain, index));
     }).filter((item) => item.vol > 0 && item.liq > 0);
+    if (!allTokens.length) allTokens = await dexFallback();
     const tokens = allTokens.filter((item, index, list) => list.findIndex((other) => other.chain === item.chain && other.symbol === item.symbol) === index).sort((a, b) => b.score - a.score).slice(0, 50);
-    if (!tokens.length) return res.status(502).json({ error: 'No live market data returned', tokens: [] });
+    if (!tokens.length) {
+      if (previousMarket?.payload) return res.status(200).json(previousMarket.payload);
+      return res.status(502).json({ error: 'No live market data returned', tokens: [] });
+    }
     const marketData = global?.data;
     const cap = Number(marketData?.total_market_cap?.usd || 0);
     const volume = Number(marketData?.total_volume?.usd || 0);
@@ -77,8 +132,10 @@ export default async function handler(req, res) {
     const chainVolumes = chainIds.map((id) => ({ chain: chainNames[id], vol: allTokens.filter((item) => item.chain === chainNames[id]).reduce((total, item) => total + Number(item.vol || 0), 0) }));
     const payload = { tokens, market: { sentiment: change > 3 ? 'Greed' : change < -3 ? 'Fear' : 'Neutral', score: change > 3 ? 74 : change < -3 ? 32 : 51, marketCap: usd(cap), marketChange: change, volume: usd(volume), volumeChange: 0, onChain: usd(trackedVol), assets: [quote('bitcoin', 'BTC', 'Bitcoin'), quote('ethereum', 'ETH', 'Ethereum'), quote('solana', 'SOL', 'Solana'), quote('binancecoin', 'BNB', 'BNB Chain')], chainVolumes, updated: 'Live market feed' } };
     cached = { payload, expires: Date.now() + 90000 };
+    await cacheSet(MARKET_CACHE_KEY, { payload, cachedAt: Date.now() }, SNAPSHOT_TTL);
     return res.status(200).json(payload);
   } catch (error) {
+    if (previousMarket?.payload) return res.status(200).json(previousMarket.payload);
     return res.status(502).json({ error: error.message || 'Market data unavailable', tokens: [] });
   }
 }
