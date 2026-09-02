@@ -2,7 +2,7 @@ import { chainNames, gmgn, unwrap } from './_gmgn.js';
 import { cacheGet, cacheSet } from './_cache.js';
 
 const pending = new Map();
-const PROFILE_FRESH_FOR = 30 * 60 * 1000;
+const PROFILE_FRESH_FOR = 24 * 60 * 60 * 1000;
 const num = (value) => Number(value || 0);
 const money = (value) => {
   const number = num(value), sign = number < 0 ? '-' : '', absolute = Math.abs(number);
