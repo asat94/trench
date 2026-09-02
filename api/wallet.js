@@ -80,7 +80,8 @@ export default async function handler(req, res) {
       res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=84600');
       return res.status(200).json({ ...cached, cached: true, stale: true });
     }
+    const limited = /rate limit|temporarily banned/i.test(error.message || '');
     console.error('TRENCH wallet profile request failed', { chain, address, message: error.message });
-    return res.status(502).json({ error: error.message || 'Wallet data is temporarily unavailable' });
+    return res.status(limited ? 429 : 502).json({ error: error.message || 'Wallet data is temporarily unavailable', limited });
   }
 }

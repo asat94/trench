@@ -21,9 +21,9 @@ async function redisRequest(command) {
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function reserveMemorySlot(key, limit) {
+async function reserveMemorySlot(key, limit, windowMs) {
   const now = Date.now();
-  const bucket = Math.floor(now / 1000);
+  const bucket = Math.floor(now / windowMs);
   const bucketKey = `${key}:${bucket}`;
   const count = rateBuckets.get(bucketKey) || 0;
   if (count >= limit) return false;
@@ -31,23 +31,23 @@ async function reserveMemorySlot(key, limit) {
   return true;
 }
 
-async function reserveRedisSlot(key, limit) {
-  const bucketKey = `${key}:${Math.floor(Date.now() / 1000)}`;
+async function reserveRedisSlot(key, limit, windowMs) {
+  const bucketKey = `${key}:${Math.floor(Date.now() / windowMs)}`;
   const count = await redisRequest(`incr/${encodeURIComponent(bucketKey)}`);
   const value = Number(count?.result);
   if (!Number.isFinite(value)) return null;
-  if (value === 1) await redisRequest(`expire/${encodeURIComponent(bucketKey)}/2`);
+  if (value === 1) await redisRequest(`expire/${encodeURIComponent(bucketKey)}/${Math.max(2, Math.ceil(windowMs * 2 / 1000))}`);
   return value <= limit;
 }
 
-// Coordinates all serverless instances so the free provider plan is not burst.
-export async function takeRateLimitSlot(key, limit = 2, timeout = 9000) {
+// Coordinates all serverless instances so a free provider plan is never burst.
+export async function takeRateLimitSlot(key, limit = 1, timeout = 15000, windowMs = 1500) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
-    const reserved = await reserveRedisSlot(key, limit);
-    if (reserved === true || (reserved === null && await reserveMemorySlot(key, limit))) return;
-    const untilNextSecond = 1000 - (Date.now() % 1000);
-    await pause(Math.max(80, untilNextSecond + 25));
+    const reserved = await reserveRedisSlot(key, limit, windowMs);
+    if (reserved === true || (reserved === null && await reserveMemorySlot(key, limit, windowMs))) return;
+    const untilNextWindow = windowMs - (Date.now() % windowMs);
+    await pause(Math.max(80, untilNextWindow + 25));
   }
   throw new Error('Live data is busy. Please try again shortly.');
 }
