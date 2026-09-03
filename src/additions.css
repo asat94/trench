@@ -5,3 +5,4 @@
 .walletretry{margin-top:16px;border:1px solid #b6ff3b;border-radius:7px;padding:8px 11px;background:transparent;color:#b6ff3b;font:11px 'DM Mono';cursor:pointer}.walletretry:hover{background:#172115}
 .results button>span:nth-child(2),.results button small,.wallet>span,.wallet>span small{min-width:0;overflow:hidden;text-overflow:ellipsis}.results button small,.wallet>span small{white-space:nowrap}
 .activitylist>div>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.radarfilters section{flex-wrap:wrap;justify-content:flex-end}.radarfilters section select{min-width:126px}
