@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ArrowUpRight, Bell, Bookmark, ChevronDown, Copy, ExternalLink, LayoutDashboard, Menu, Radar, Search, Sparkles, Star, X } from 'lucide-react';
 import './styles.css';
+import './fonts.css';
 import './additions.css';
 
 const chainLabels = { Solana: 'SOL', Base: 'BASE', 'BNB Chain': 'BNB', Ethereum: 'ETH', 'Robinhood Chain': 'RHC' };
@@ -19,13 +20,8 @@ const Tag = ({ children, hot }) => <span className={`tag ${hot ? 'hot' : ''}`}>{
 const Coin = ({ token }) => <span className={`coin ${token.color || 'blue'}`}>{(token.symbol || '?')[0]}{token.logo ? <img src={token.logo} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; }} /> : null}</span>;
 const Change = ({ value }) => <b className={Number(value) >= 0 ? 'up' : 'down'}>{Number(value) >= 0 ? '+' : ''}{Number(value || 0).toFixed(1)}%</b>;
 const Score = ({ value }) => <span className={`score ${value > 79 ? 'hot' : value > 69 ? 'warm' : ''}`}>{value}</span>;
-function ChainLogo({ chain }) {
-  if (chain === 'Solana') return <span className="chainlogo solana" title="Solana"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="solana-gradient" x1="4" y1="28" x2="28" y2="4" gradientUnits="userSpaceOnUse"><stop stopColor="#00FFA3"/><stop offset="1" stopColor="#DC1FFF"/></linearGradient></defs><path d="M8 7h19l-4 4H4l4-4Zm-4 7h19l5 4H9l-5-4Zm4 7h19l-4 4H4l4-4Z" fill="url(#solana-gradient)"/></svg></span>;
-  if (chain === 'BNB Chain') return <span className="chainlogo bnb" title="BNB Chain"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="m16 4 4 4-4 4-4-4 4-4ZM9 11l4 4-4 4-4-4 4-4Zm14 0 4 4-4 4-4-4 4-4Zm-7 3 4 4-4 4-4-4 4-4Zm0 6 4 4-4 4-4-4 4-4Z" fill="currentColor"/></svg></span>;
-  if (chain === 'Ethereum') return <span className="chainlogo ethereum" title="Ethereum"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="m16 3-8 13 8 4.5L24 16 16 3Z" fill="#A7B5FF"/><path d="m16 3v17.5L24 16 16 3Z" fill="#6676C8"/><path d="m8 18 8 11v-6.3L8 18Z" fill="#8190E5"/><path d="m24 18-8 11v-6.3L24 18Z" fill="#5261AE"/></svg></span>;
-  if (chain === 'Base') return <span className="chainlogo base" title="Base"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13" fill="#0052FF"/><path d="M7 14.2h17.7a9 9 0 1 1 0 3.6H7v-3.6Z" fill="white"/></svg></span>;
-  return <span className="chainlogo robinhood" title="Robinhood Chain"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M23.8 4.5c-5.7 1.4-10.6 5-13.3 9.9-1.7 3.1-2.3 6.8-1.9 11.1l4.2-5.2 3.1 1.2 1.2-4 3.7-.5-1-3.3 4-1.8V4.5Z" fill="currentColor"/><path d="m8.4 27.5 5.5-7.2" stroke="#07100A" strokeWidth="2" strokeLinecap="round"/></svg></span>;
-}
+const chainLogoFiles = { Solana: '/chain-icons/solana.svg', 'BNB Chain': '/chain-icons/bnb-chain.svg', 'Robinhood Chain': '/chain-icons/robinhood-chain.jpg', Base: '/chain-icons/base.svg', Ethereum: '/chain-icons/ethereum.svg' };
+function ChainLogo({ chain }) { return <span className={`chainlogo ${chainLabels[chain]?.toLowerCase() || ''}`}><img src={chainLogoFiles[chain]} alt={`${chain} logo`} /></span>; }
 const hash = (value) => [...String(value || 'TRENCH')].reduce((total, char) => (total * 31 + char.charCodeAt(0)) >>> 0, 7);
 
 function PriceChart({ token }) {
