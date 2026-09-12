@@ -150,14 +150,49 @@ function SmartWallets() {
 
 function Watchlist({ tokens, saved, open, setSaved }) { const items = tokens.filter((token) => saved.includes(token.symbol)); return <><div className="page"><div><span className="eyebrow"><Bookmark size={12} /> WATCHLIST</span><h1>Your saved signals.</h1><p>Stored on this device. Account syncing can come later.</p></div><Tag>{items.length} SAVED</Tag></div>{items.length ? <section className="panel"><Table tokens={items} open={open} saved={saved} setSaved={setSaved} /></section> : <section className="emptybox"><Bookmark size={28} /><h2>Your watchlist is clear</h2><p>Save a token from Market Pulse or Radar to keep it here.</p></section>}</>; }
 
+function TrenchToken() {
+  return <div className="trench-token-page">
+    <section className="token-hero panel">
+      <div className="token-hero-copy">
+        <span className="eyebrow"><i /> TRENCH ECOSYSTEM</span>
+        <div className="token-title"><img src="/trench-token-mark.png" alt="TRENCH logo" /><div><span className="token-ticker">$TRENCH</span><h1>Built for the trenches.</h1></div></div>
+        <p>The token layer of TRENCH is coming later. We’re building the discovery experience first.</p>
+        <div className="token-actions"><span className="token-state">PRE-LAUNCH</span><a href="https://x.com/TRENCHdashapp" target="_blank" rel="noreferrer">Follow on X <ArrowUpRight size={15} /></a></div>
+      </div>
+      <div className="token-mark-wrap"><span className="token-orbit" /><img src="/trench-token-mark.png" alt="" /></div>
+    </section>
+
+    <section className="token-facts">
+      <article><span>Network</span><strong>To be selected</strong><small>No chain announced yet</small></article>
+      <article><span>Contract address</span><strong>Not published</strong><small>Only official links will appear here</small></article>
+      <article><span>Launch status</span><strong>Building first</strong><small>No launch date announced</small></article>
+      <article><span>Trench Score</span><strong>Not scored</strong><small>Activates with live markets</small></article>
+    </section>
+
+    <div className="token-grid">
+      <section className="panel token-chart-card">
+        <div className="head"><div><span>$TRENCH MARKET</span><h2>Chart</h2><p>Live price action will appear after launch.</p></div><Tag>WAITING</Tag></div>
+        <div className="token-chart-placeholder"><div className="token-grid-lines" /><img src="/trench-token-mark.png" alt="" /><strong>Market data isn’t live yet</strong><span>Price · 24h · market cap · volume</span></div>
+      </section>
+      <section className="panel token-roadmap">
+        <div className="head"><div><span>LAUNCH INFO</span><h2>What will live here</h2><p>One official place for verified token details.</p></div></div>
+        <div className="token-roadmap-item"><b>01</b><span><strong>Verified contract</strong><small>Chain and CA once confirmed</small></span></div>
+        <div className="token-roadmap-item"><b>02</b><span><strong>Live market view</strong><small>Chart, price, liquidity and volume</small></span></div>
+        <div className="token-roadmap-item"><b>03</b><span><strong>Trench Score</strong><small>Market activity measured in context</small></span></div>
+      </section>
+    </div>
+    <p className="token-warning">No $TRENCH contract exists on this page yet. Treat any address claiming otherwise as unverified.</p>
+  </div>;
+}
+
 function App() { const [page, setPage] = useState('Market Pulse'); const [tokens, setTokens] = useState([]); const [market, setMarket] = useState(); const [status, setStatus] = useState('Loading live market data…'); const [selected, setSelected] = useState(); const [saved, setSaved] = useState(() => JSON.parse(localStorage.getItem('trench-watchlist') || '[]')); const [query, setQuery] = useState(''); const [results, setResults] = useState([]); const [searching, setSearching] = useState(false); const [menu, setMenu] = useState(false);
   useEffect(() => { const applyMarket = (data) => { setTokens(data.tokens || []); setMarket(data.market); setStatus(data.tokens?.length ? data.market?.updated || 'Live market feed' : data.error || 'Live market data unavailable'); }; fetch('/api/market').then((response) => response.json()).then((data) => { applyMarket(data); return fetch('/api/market?refresh=1').then((response) => response.json()).then((next) => { if (next.tokens?.length) applyMarket(next); }).catch(() => {}); }).catch(() => setStatus('Live market data unavailable')); }, []);
   useEffect(() => localStorage.setItem('trench-watchlist', JSON.stringify(saved)), [saved]);
   useEffect(() => { if (query.trim().length < 2) { setResults([]); return; } setSearching(true); const timer = setTimeout(() => fetch(`/api/search?q=${encodeURIComponent(query)}`).then((response) => response.json()).then((data) => setResults(data.tokens || [])).catch(() => setResults([])).finally(() => setSearching(false)), 250); return () => clearTimeout(timer); }, [query]);
   const choose = (token) => { setSelected(token); setQuery(''); setResults([]); };
-  const content = page === 'Market Pulse' ? <Market tokens={tokens} market={market} status={status} open={choose} saved={saved} setSaved={setSaved} changePage={setPage} /> : page === 'Trench Radar' ? <RadarPage tokens={tokens} status={status} open={choose} saved={saved} setSaved={setSaved} /> : page === 'Smart Wallets' ? <SmartWallets /> : <Watchlist tokens={tokens} saved={saved} open={choose} setSaved={setSaved} />;
-  const navigation = [['Market Pulse', LayoutDashboard], ['Trench Radar', Radar], ['Smart Wallets', Sparkles], ['Watchlist', Bookmark]];
-  return <div className="app"><aside className={menu ? 'open' : ''}><div className="brand"><img className="brandmark" src="/trench-mark.png" alt="TRENCH" /><strong>TRENCH</strong><small>DISCOVERY</small><button onClick={() => setMenu(false)}><X size={18} /></button></div><nav>{navigation.map(([name, Icon]) => <button key={name} className={page === name ? 'active' : ''} onClick={() => { setPage(name); setMenu(false); }}><Icon size={18} />{name}{name === 'Watchlist' && saved.length ? <i>{saved.length}</i> : null}</button>)}</nav><div className="foot">TRENCH</div></aside><main><header><button className="menu" onClick={() => setMenu(true)}><Menu size={21} /></button><div className="searchwrap"><label><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search tokens or contract address" /><kbd>{searching ? '…' : 'ENTER'}</kbd></label>{results.length > 0 && <div className="results">{results.map((token) => <button key={token.url || `${token.symbol}-${token.chain}`} onClick={() => choose(token)}><Coin token={token} /><span><b>{shortText(token.name, 'Token')}</b><small>{shortText(token.symbol, 'TOKEN')} · {token.chain} · {token.price}</small></span><Change value={token.change} /><ArrowUpRight size={14} /></button>)}</div>}{query.length > 1 && !searching && !results.length && <div className="results emptysearch">No matching tokens found.</div>}</div><Bell size={18} /></header><div className="content">{content}</div></main><TokenPanel token={selected} close={() => setSelected()} saved={saved} setSaved={setSaved} /></div>;
+  const content = page === 'Market Pulse' ? <Market tokens={tokens} market={market} status={status} open={choose} saved={saved} setSaved={setSaved} changePage={setPage} /> : page === 'Trench Radar' ? <RadarPage tokens={tokens} status={status} open={choose} saved={saved} setSaved={setSaved} /> : page === 'Smart Wallets' ? <SmartWallets /> : page === 'Watchlist' ? <Watchlist tokens={tokens} saved={saved} open={choose} setSaved={setSaved} /> : <TrenchToken />;
+  const navigation = [['Market Pulse', LayoutDashboard], ['Trench Radar', Radar], ['Smart Wallets', Sparkles], ['Watchlist', Bookmark], ['$TRENCH', Star]];
+  return <div className="app"><aside className={menu ? 'open' : ''}><div className="brand"><img className="brandmark" src="/trench-mark.png" alt="TRENCH" /><strong>TRENCH</strong><small>DISCOVERY</small><button onClick={() => setMenu(false)}><X size={18} /></button></div><nav>{navigation.map(([name, Icon]) => <button key={name} className={page === name ? 'active' : ''} onClick={() => { setPage(name); setMenu(false); }}><Icon size={18} />{name}{name === 'Watchlist' && saved.length ? <i>{saved.length}</i> : null}{name === '$TRENCH' ? <i>SOON</i> : null}</button>)}</nav><div className="foot"><a href="https://x.com/TRENCHdashapp" target="_blank" rel="noreferrer"><b>𝕏</b><span>@TRENCHdashapp</span><ExternalLink size={12} /></a></div></aside><main><header><button className="menu" onClick={() => setMenu(true)}><Menu size={21} /></button><div className="searchwrap"><label><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search tokens or contract address" /><kbd>{searching ? '…' : 'ENTER'}</kbd></label>{results.length > 0 && <div className="results">{results.map((token) => <button key={token.url || `${token.symbol}-${token.chain}`} onClick={() => choose(token)}><Coin token={token} /><span><b>{shortText(token.name, 'Token')}</b><small>{shortText(token.symbol, 'TOKEN')} · {token.chain} · {token.price}</small></span><Change value={token.change} /><ArrowUpRight size={14} /></button>)}</div>}{query.length > 1 && !searching && !results.length && <div className="results emptysearch">No matching tokens found.</div>}</div><a className="header-x" href="https://x.com/TRENCHdashapp" target="_blank" rel="noreferrer" aria-label="TRENCH on X">𝕏</a><Bell size={18} /></header><div className="content">{content}</div></main><TokenPanel token={selected} close={() => setSelected()} saved={saved} setSaved={setSaved} /></div>;
 }
 
 createRoot(document.getElementById('root')).render(<App />);
