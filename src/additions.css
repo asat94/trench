@@ -54,3 +54,7 @@ th{font-size:10px;color:#8c998f}td{font-size:12px}.asset b{font-size:13px}.asset
 .rwa-metrics span{font-size:13px}.rwa-metrics strong{font-size:24px}.rwa-metrics small{font-size:11px}.rwa-metrics small em{font-size:10px}
 .rwa-chart-head span,.rwa-ranking>div:first-child span{font-size:10px}.rwa-chart-head h3,.rwa-ranking h3{font-size:16px}.rwa-chart-head small{font-size:10px}
 .rwa-rank>span{font-size:10px}.rwa-rank b{font-size:12px}.rwa-rank>strong{font-size:11px}.rwa-metric-empty span,.rwa-rank-empty{font-size:11px}
+.rwa-chart .rwa-chart-graphic{display:block;width:100%;height:auto;aspect-ratio:720/250;margin-top:12px;overflow:visible}
+.rwa-axis text,.rwa-bar text{fill:#829087;font:10px 'DM Mono'}
+.rwa-bar text:first-child{fill:#dfe7df;font-weight:600}.rwa-bar rect{opacity:.88;filter:drop-shadow(0 0 5px #ffffff0f)}
+@media(max-width:720px){.rwa-chart .rwa-chart-graphic{height:auto}.rwa-axis text,.rwa-bar text{font-size:11px}.rwa-bar text:first-child{display:none}}

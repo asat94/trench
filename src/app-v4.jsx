@@ -91,10 +91,10 @@ function WalletPanel({ wallet, close }) {
 function Table({ tokens, open, saved, setSaved }) { return <div className="scroll"><table><thead><tr><th>Token</th><th>Price</th><th>24h</th><th>Market cap</th><th>24h volume</th><th className="desk">Signal</th><th>Score</th><th /></tr></thead><tbody>{tokens.map((token) => <tr key={`${token.chain}-${token.symbol}`} onClick={() => open(token)}><td><div className="asset"><Coin token={token} /><span><b>{shortText(token.name, 'Token')}</b><small>{shortText(token.symbol, 'TOKEN')} · {chainLabels[token.chain] || token.chain}</small></span></div></td><td>{token.price}</td><td><Change value={token.change} /></td><td>{fmt(token.cap)}</td><td>{fmt(token.vol)}</td><td className="desk"><Tag hot={token.score > 80}>{token.signal}</Tag></td><td><Score value={token.score} /></td><td><button className={`star ${saved.includes(token.symbol) ? 'on' : ''}`} onClick={(event) => { event.stopPropagation(); setSaved(saved.includes(token.symbol) ? saved.filter((item) => item !== token.symbol) : [...saved, token.symbol]); }}><Star size={16} /></button></td></tr>)}</tbody></table></div>; }
 
 const rwaMetrics = {
-  tokenVolume: { label: 'RWA token volume', short: 'RWA volume', prefix: '$', source: 'CMC' },
-  tokenValue: { label: 'Tokenized market value', short: 'Tokenized value', prefix: '$', source: 'CMC' },
-  dexVolume: { label: 'Chain DEX volume', short: 'DEX volume', prefix: '$', source: 'DEFILLAMA' },
-  tvl: { label: 'Chain DeFi TVL', short: 'DeFi TVL', prefix: '$', source: 'DEFILLAMA' }
+  tokenVolume: { label: 'Total volume', short: 'Total volume', prefix: '$' },
+  tokenValue: { label: 'Market value', short: 'Market value', prefix: '$' },
+  dexVolume: { label: 'Onchain volume', short: 'Onchain volume', prefix: '$' },
+  tvl: { label: 'DeFi TVL', short: 'DeFi TVL', prefix: '$' }
 };
 const rwaColors = { 'BNB Chain': '#f3ba2f', Solana: '#a66cff', 'Robinhood Chain': '#30df84', Ethereum: '#8195ff', Base: '#4d82ff' };
 const compactMetric = (value, prefix = '') => {
@@ -104,6 +104,42 @@ const compactMetric = (value, prefix = '') => {
   const compact = number >= 1e9 ? `${(number / 1e9).toFixed(number >= 10e9 ? 1 : 2)}B` : number >= 1e6 ? `${(number / 1e6).toFixed(number >= 10e6 ? 1 : 2)}M` : number >= 1e3 ? `${(number / 1e3).toFixed(number >= 10e3 ? 0 : 1)}K` : Math.round(number).toLocaleString();
   return `${prefix}${compact}`;
 };
+
+function RwaChart({ chains, metric, period, prefix }) {
+  const timeline = metric === 'dexVolume' && chains.some((chain) => chain.metrics[metric].length > 1);
+  const values = timeline
+    ? chains.flatMap((chain) => chain.metrics[metric])
+    : chains.map((chain) => chain.summaries?.[metric] ?? chain.metrics[metric].at(-1)).filter(Number.isFinite);
+  const maxValue = Math.max(...values, 1);
+  const pointFor = (value, index, length) => ({
+    x: length === 1 ? 360 : 58 + (index / (length - 1)) * 620,
+    y: 202 - (value / maxValue) * 152
+  });
+  const pathFor = (series) => series.map((value, index) => {
+    const point = pointFor(value, index, series.length);
+    return `${index ? 'L' : 'M'} ${point.x} ${point.y}`;
+  }).join(' ');
+
+  if (timeline) return <svg className="rwa-chart-graphic" viewBox="0 0 720 250" role="img" aria-label={`Onchain volume across five chains over ${period}`}>
+    <g className="rwa-grid"><path d="M58 50H678M58 88H678M58 126H678M58 164H678M58 202H678" /><path d="M58 50V202M213 50V202M368 50V202M523 50V202M678 50V202" /></g>
+    <g className="rwa-axis"><text x="5" y="54">{compactMetric(maxValue, prefix)}</text><text x="5" y="206">$0</text><text x="58" y="232">{period.toUpperCase()} AGO</text><text x="650" y="232">NOW</text></g>
+    {chains.map((chain) => <path key={chain.chain} className="rwa-line" d={pathFor(chain.metrics[metric])} style={{ stroke: rwaColors[chain.chain] }} />)}
+  </svg>;
+
+  return <svg className="rwa-chart-graphic rwa-bars" viewBox="0 0 720 250" role="img" aria-label={`Five-chain ${metric} comparison`}>
+    <g className="rwa-grid"><path d="M38 45H698M38 85H698M38 125H698M38 165H698M38 205H698" /></g>
+    {chains.map((chain, index) => {
+      const value = chain.summaries?.[metric] ?? chain.metrics[metric].at(-1);
+      const height = Math.max(4, value / maxValue * 145);
+      const x = 61 + index * 132;
+      return <g key={chain.chain} className="rwa-bar">
+        <text x={x + 43} y={Math.max(18, 198 - height)} textAnchor="middle">{compactMetric(value, prefix)}</text>
+        <rect x={x} y={205 - height} width="86" height={height} rx="6" fill={rwaColors[chain.chain]} />
+        <text x={x + 43} y="232" textAnchor="middle">{chainLabels[chain.chain]}</text>
+      </g>;
+    })}
+  </svg>;
+}
 
 function RwaPulse() {
   const [marketType, setMarketType] = useState('rwa');
@@ -126,20 +162,14 @@ function RwaPulse() {
   const ranked = chains.map((chain) => ({ ...chain, latest: chain.summaries?.[metric] ?? chain.metrics?.[metric]?.at(-1) })).sort((a, b) => Number.isFinite(b.latest) - Number.isFinite(a.latest) || Number(b.latest || 0) - Number(a.latest || 0));
   const latest = ranked.filter((chain) => Number.isFinite(chain.latest));
   const maxRank = Math.max(...latest.map((chain) => chain.latest), 1);
-  const allValues = active.flatMap((chain) => chain.metrics[metric]);
-  const min = Math.min(...allValues, 0);
-  const max = Math.max(...allValues, 1);
-  const span = Math.max(max - min, 1);
-  const pointFor = (value, index, length) => ({ x: length === 1 ? 360 : 22 + (index / (length - 1)) * 676, y: 216 - ((value - min) / span) * 176 });
-  const pathFor = (values) => values.map((value, index) => { const point = pointFor(value, index, values.length); return `${index ? 'L' : 'M'} ${point.x} ${point.y}`; }).join(' ');
   const toggleChain = (chain) => setVisible((current) => { const next = new Set(current); next.has(chain) ? next.delete(chain) : next.add(chain); return next; });
   const meta = rwaMetrics[metric];
 
   return <section className="rwa-pulse panel">
     <div className="rwa-topline"><div><span className="rwa-kicker">REAL-WORLD ASSET PULSE</span><h2>Follow onchain adoption.</h2><p>Compare verified RWA activity across the five networks TRENCH tracks.</p></div><span className={`rwa-source ${data?.live ? 'live' : ''}`}><i />{data?.live ? 'LIVE' : 'OFFLINE'}</span></div>
     <div className="rwa-controls"><div className="rwa-tabs" role="tablist"><button className={marketType === 'rwa' ? 'active' : ''} onClick={() => setMarketType('rwa')}>RWA Market</button><button className={marketType === 'stocks' ? 'active' : ''} onClick={() => setMarketType('stocks')}>Tokenized Stocks</button></div><div className="rwa-periods" aria-label="Time range">{['1d', '7d', '30d'].map((item) => <button key={item} className={period === item ? 'active' : ''} onClick={() => setPeriod(item)}>{item.toUpperCase()}</button>)}</div></div>
-    <div className="rwa-metrics">{Object.entries(rwaMetrics).map(([key, item]) => <button key={key} className={metric === key ? 'active' : ''} onClick={() => setMetric(key)}><span>{item.label}</span><strong>{compactMetric(data?.totals?.[key], item.prefix)}</strong><small><em>{item.source}</em>{key === 'tokenValue' || key === 'tvl' ? 'Current snapshot' : `${period.toUpperCase()} total`}</small></button>)}</div>
-    {message && !chains.length ? <div className="rwa-unavailable"><Radar size={24} /><strong>Data connection unavailable</strong><span>{message}</span></div> : <div className="rwa-main"><div className="rwa-chart"><div className="rwa-chart-head"><div><span>{meta.source} · {meta.label}</span><h3>Five-chain comparison</h3></div><small>{metric === 'tokenValue' || metric === 'tvl' ? 'CURRENT' : period.toUpperCase()} · {data?.updated || 'live'}</small></div>{active.length ? <svg viewBox="0 0 720 250" role="img" aria-label={`${meta.label} across five chains`} preserveAspectRatio="none"><g className="rwa-grid"><path d="M22 40H698M22 84H698M22 128H698M22 172H698M22 216H698" /><path d="M22 40V216M191 40V216M360 40V216M529 40V216M698 40V216" /></g>{active.map((chain) => <React.Fragment key={chain.chain}><path className="rwa-line" d={pathFor(chain.metrics[metric])} style={{ stroke: rwaColors[chain.chain] }} />{chain.metrics[metric].length === 1 ? <circle cx="360" cy={pointFor(chain.metrics[metric][0], 0, 1).y} r="5" fill={rwaColors[chain.chain]} /> : null}</React.Fragment>)}</svg> : <div className="rwa-metric-empty"><Radar size={20} /><b>No verified data for this view</b><span>This metric is left blank rather than estimated.</span></div>}<div className="rwa-legend">{chains.map((chain) => <button key={chain.chain} className={visible.has(chain.chain) ? 'on' : ''} onClick={() => toggleChain(chain.chain)}><ChainLogo chain={chain.chain} /><span>{chain.chain}</span></button>)}</div></div><div className="rwa-ranking"><div><span>CHAIN RANKING</span><h3>{meta.short} leaders</h3></div>{ranked.map((chain, index) => <div className={`rwa-rank ${Number.isFinite(chain.latest) ? '' : 'missing'}`} key={chain.chain}><span>{String(index + 1).padStart(2, '0')}</span><ChainLogo chain={chain.chain} /><div><b>{chain.chain}</b><i><em style={{ width: Number.isFinite(chain.latest) ? `${Math.max(4, chain.latest / maxRank * 100)}%` : '0%', background: rwaColors[chain.chain] }} /></i></div><strong>{compactMetric(chain.latest, meta.prefix)}</strong></div>)}</div></div>}
+    <div className="rwa-metrics">{Object.entries(rwaMetrics).map(([key, item]) => <button key={key} className={metric === key ? 'active' : ''} onClick={() => setMetric(key)}><span>{item.label}</span><strong>{compactMetric(data?.totals?.[key], item.prefix)}</strong><small>{key === 'tokenValue' || key === 'tvl' ? 'Current snapshot' : `${period.toUpperCase()} total`}</small></button>)}</div>
+    {message && !chains.length ? <div className="rwa-unavailable"><Radar size={24} /><strong>Data connection unavailable</strong><span>{message}</span></div> : <div className="rwa-main"><div className="rwa-chart"><div className="rwa-chart-head"><div><span>{meta.label}</span><h3>Five-chain comparison</h3></div><small>{metric === 'tokenValue' || metric === 'tvl' ? 'CURRENT' : period.toUpperCase()} · {data?.updated || 'live'}</small></div>{active.length ? <RwaChart chains={active} metric={metric} period={period} prefix={meta.prefix} /> : <div className="rwa-metric-empty"><Radar size={20} /><b>No verified data for this view</b><span>This metric is left blank rather than estimated.</span></div>}<div className="rwa-legend">{chains.map((chain) => <button key={chain.chain} className={visible.has(chain.chain) ? 'on' : ''} onClick={() => toggleChain(chain.chain)}><ChainLogo chain={chain.chain} /><span>{chain.chain}</span></button>)}</div></div><div className="rwa-ranking"><div><span>CHAIN RANKING</span><h3>{meta.short} leaders</h3></div>{ranked.map((chain, index) => <div className={`rwa-rank ${Number.isFinite(chain.latest) ? '' : 'missing'}`} key={chain.chain}><span>{String(index + 1).padStart(2, '0')}</span><ChainLogo chain={chain.chain} /><div><b>{chain.chain}</b><i><em style={{ width: Number.isFinite(chain.latest) ? `${Math.max(4, chain.latest / maxRank * 100)}%` : '0%', background: rwaColors[chain.chain] }} /></i></div><strong>{compactMetric(chain.latest, meta.prefix)}</strong></div>)}</div></div>}
   </section>;
 }
 
