@@ -27,6 +27,15 @@ async function getJson(url, options = {}, timeout = 6500) {
   return response.json();
 }
 
+async function atStage(stage, request) {
+  try { return await request; }
+  catch (error) { error.stage = stage; throw error; }
+}
+
+function chunks(items, size) {
+  return Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, (index + 1) * size));
+}
+
 function trackedChain(platform = {}) {
   const text = `${platform.name || ''} ${platform.slug || ''} ${platform.symbol || ''}`.toLowerCase();
   if (/robinhood/.test(text)) return 'Robinhood Chain';
@@ -53,7 +62,7 @@ async function fetchCmcMarket(market) {
   listUrl.searchParams.set('convert', 'USD');
   if (market === 'stocks') listUrl.searchParams.set('asset_type', 'stock');
 
-  const list = await getJson(listUrl, { headers: cmcHeaders() });
+  const list = await atStage('cmc-rwa-list', getJson(listUrl, { headers: cmcHeaders() }));
   const assets = list?.data?.rwa_assets || [];
   const ids = assets.map((asset) => asset.rwa_id).filter(Boolean).slice(0, MAX_ASSETS);
   if (!ids.length) throw new Error('CoinMarketCap returned no RWA assets.');
@@ -62,7 +71,7 @@ async function fetchCmcMarket(market) {
   quoteUrl.searchParams.set('rwa_id', ids.join(','));
   quoteUrl.searchParams.set('convert', 'USD');
   quoteUrl.searchParams.set('skip_invalid', 'true');
-  const quoteData = await getJson(quoteUrl, { headers: cmcHeaders() });
+  const quoteData = await atStage('cmc-rwa-quotes', getJson(quoteUrl, { headers: cmcHeaders() }));
   const rwaAssets = quoteData?.data?.rwa_assets || [];
   const tokens = rwaAssets.flatMap((asset) => (asset.tokens || []).map((token) => ({
     ...token,
@@ -71,12 +80,14 @@ async function fetchCmcMarket(market) {
   }))).filter((token) => token.crypto_id);
 
   const tokenIds = [...new Set(tokens.map((token) => token.crypto_id))].slice(0, 250);
-  const infoUrl = new URL(`${CMC}/v2/cryptocurrency/info`);
-  infoUrl.searchParams.set('id', tokenIds.join(','));
-  infoUrl.searchParams.set('aux', 'platform');
-  infoUrl.searchParams.set('skip_invalid', 'true');
-  const infoData = tokenIds.length ? await getJson(infoUrl, { headers: cmcHeaders() }) : { data: {} };
-  const infoById = new Map(unpackInfo(infoData).map((item) => [Number(item.id), item]));
+  const infoPages = tokenIds.length ? await atStage('cmc-token-platforms', Promise.all(chunks(tokenIds, 100).map((ids) => {
+    const infoUrl = new URL(`${CMC}/v2/cryptocurrency/info`);
+    infoUrl.searchParams.set('id', ids.join(','));
+    infoUrl.searchParams.set('aux', 'platform');
+    infoUrl.searchParams.set('skip_invalid', 'true');
+    return getJson(infoUrl, { headers: cmcHeaders() });
+  }))) : [];
+  const infoById = new Map(infoPages.flatMap(unpackInfo).map((item) => [Number(item.id), item]));
   const chains = new Map(CHAIN_NAMES.map((chain) => [chain, blankChain(chain)]));
 
   for (const token of tokens) {
@@ -217,6 +228,6 @@ export default async function handler(req, res) {
       : error?.status === 429
         ? 'CoinMarketCap rate limit reached. Please try again shortly.'
         : 'Live RWA data could not be refreshed just now.';
-    return res.status(502).json({ available: false, error: message });
+    return res.status(502).json({ available: false, error: message, stage: error?.stage || 'aggregation' });
   }
 }
