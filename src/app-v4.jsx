@@ -90,13 +90,64 @@ function WalletPanel({ wallet, close }) {
 
 function Table({ tokens, open, saved, setSaved }) { return <div className="scroll"><table><thead><tr><th>Token</th><th>Price</th><th>24h</th><th>Market cap</th><th>24h volume</th><th className="desk">Signal</th><th>Score</th><th /></tr></thead><tbody>{tokens.map((token) => <tr key={`${token.chain}-${token.symbol}`} onClick={() => open(token)}><td><div className="asset"><Coin token={token} /><span><b>{shortText(token.name, 'Token')}</b><small>{shortText(token.symbol, 'TOKEN')} · {chainLabels[token.chain] || token.chain}</small></span></div></td><td>{token.price}</td><td><Change value={token.change} /></td><td>{fmt(token.cap)}</td><td>{fmt(token.vol)}</td><td className="desk"><Tag hot={token.score > 80}>{token.signal}</Tag></td><td><Score value={token.score} /></td><td><button className={`star ${saved.includes(token.symbol) ? 'on' : ''}`} onClick={(event) => { event.stopPropagation(); setSaved(saved.includes(token.symbol) ? saved.filter((item) => item !== token.symbol) : [...saved, token.symbol]); }}><Star size={16} /></button></td></tr>)}</tbody></table></div>; }
 
+const rwaMetrics = {
+  volume: { label: 'Onchain volume', short: 'Volume', prefix: '$' },
+  holders: { label: 'Tracked holders', short: 'Holders', prefix: '' },
+  traders: { label: 'Active traders', short: 'Traders', prefix: '' },
+  value: { label: 'Onchain value', short: 'Value', prefix: '$' }
+};
+const rwaColors = { 'BNB Chain': '#f3ba2f', Solana: '#a66cff', 'Robinhood Chain': '#30df84', Ethereum: '#8195ff', Base: '#4d82ff' };
+const compactMetric = (value, prefix = '') => {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
+  const compact = number >= 1e9 ? `${(number / 1e9).toFixed(number >= 10e9 ? 1 : 2)}B` : number >= 1e6 ? `${(number / 1e6).toFixed(number >= 10e6 ? 1 : 2)}M` : number >= 1e3 ? `${(number / 1e3).toFixed(number >= 10e3 ? 0 : 1)}K` : Math.round(number).toLocaleString();
+  return `${prefix}${compact}`;
+};
+
+function RwaPulse() {
+  const [marketType, setMarketType] = useState('rwa');
+  const [period, setPeriod] = useState('30d');
+  const [metric, setMetric] = useState('volume');
+  const [data, setData] = useState();
+  const [message, setMessage] = useState('Loading market view…');
+  const [visible, setVisible] = useState(() => new Set(Object.keys(rwaColors)));
+
+  useEffect(() => {
+    setMessage('Loading market view…');
+    fetch(`/api/rwa?market=${marketType}&period=${period}`).then((response) => response.json()).then((next) => {
+      setData(next);
+      setMessage(next.error || '');
+    }).catch(() => { setData(); setMessage('RWA market data is temporarily unavailable.'); });
+  }, [marketType, period]);
+
+  const chains = data?.chains || [];
+  const active = chains.filter((chain) => visible.has(chain.chain) && chain.metrics?.[metric]?.length);
+  const latest = chains.map((chain) => ({ ...chain, latest: chain.metrics?.[metric]?.at(-1) })).filter((chain) => Number.isFinite(chain.latest)).sort((a, b) => b.latest - a.latest);
+  const maxRank = Math.max(...latest.map((chain) => chain.latest), 1);
+  const allValues = active.flatMap((chain) => chain.metrics[metric]);
+  const min = Math.min(...allValues, 0);
+  const max = Math.max(...allValues, 1);
+  const span = Math.max(max - min, 1);
+  const pathFor = (values) => values.map((value, index) => `${index ? 'L' : 'M'} ${22 + (index / Math.max(values.length - 1, 1)) * 676} ${216 - ((value - min) / span) * 176}`).join(' ');
+  const toggleChain = (chain) => setVisible((current) => { const next = new Set(current); next.has(chain) ? next.delete(chain) : next.add(chain); return next; });
+  const meta = rwaMetrics[metric];
+
+  return <section className="rwa-pulse panel">
+    <div className="rwa-topline"><div><span className="rwa-kicker">REAL-WORLD ASSET PULSE</span><h2>Follow onchain adoption.</h2><p>Compare activity across the five networks TRENCH tracks.</p></div><span className={`rwa-source ${data?.live ? 'live' : ''}`}><i />{data?.live ? 'LIVE' : 'PREVIEW'}</span></div>
+    <div className="rwa-controls"><div className="rwa-tabs" role="tablist"><button className={marketType === 'rwa' ? 'active' : ''} onClick={() => setMarketType('rwa')}>RWA Market</button><button className={marketType === 'stocks' ? 'active' : ''} onClick={() => setMarketType('stocks')}>Tokenized Stocks</button></div><div className="rwa-periods" aria-label="Time range">{['1d', '7d', '30d'].map((item) => <button key={item} className={period === item ? 'active' : ''} onClick={() => setPeriod(item)}>{item.toUpperCase()}</button>)}</div></div>
+    <div className="rwa-metrics">{Object.entries(rwaMetrics).map(([key, item]) => <button key={key} className={metric === key ? 'active' : ''} onClick={() => setMetric(key)}><span>{item.label}</span><strong>{compactMetric(data?.totals?.[key], item.prefix)}</strong><small>{period.toUpperCase()} tracked view</small></button>)}</div>
+    {message && !chains.length ? <div className="rwa-unavailable"><Radar size={24} /><strong>Data connection unavailable</strong><span>{message}</span></div> : <div className="rwa-main"><div className="rwa-chart"><div className="rwa-chart-head"><div><span>{meta.label}</span><h3>{marketType === 'rwa' ? 'RWA market' : 'Tokenized stocks'} by chain</h3></div><small>{period.toUpperCase()} · {data?.updated || 'preview'}</small></div><svg viewBox="0 0 720 250" role="img" aria-label={`${meta.label} across five chains`} preserveAspectRatio="none"><g className="rwa-grid"><path d="M22 40H698M22 84H698M22 128H698M22 172H698M22 216H698" /><path d="M22 40V216M191 40V216M360 40V216M529 40V216M698 40V216" /></g>{active.map((chain) => <path key={chain.chain} className="rwa-line" d={pathFor(chain.metrics[metric])} style={{ stroke: rwaColors[chain.chain] }} />)}</svg><div className="rwa-legend">{chains.map((chain) => <button key={chain.chain} className={visible.has(chain.chain) ? 'on' : ''} onClick={() => toggleChain(chain.chain)}><ChainLogo chain={chain.chain} /><span>{chain.chain}</span></button>)}</div></div><div className="rwa-ranking"><div><span>CHAIN RANKING</span><h3>{meta.short} leaders</h3></div>{latest.map((chain, index) => <div className="rwa-rank" key={chain.chain}><span>{String(index + 1).padStart(2, '0')}</span><ChainLogo chain={chain.chain} /><div><b>{chain.chain}</b><i><em style={{ width: `${Math.max(4, chain.latest / maxRank * 100)}%`, background: rwaColors[chain.chain] }} /></i></div><strong>{compactMetric(chain.latest, meta.prefix)}</strong></div>)}</div></div>}
+    <div className="rwa-note"><span>{data?.note || 'Interface preview data — connect a verified RWA provider before launch.'}</span><a href="https://docs.rwa.xyz/" target="_blank" rel="noreferrer">Data methodology <ArrowUpRight size={13} /></a></div>
+  </section>;
+}
+
 function Market({ tokens, market, status, open, saved, setSaved, changePage }) {
   const chains = (market?.chainVolumes?.length ? market.chainVolumes : ['Solana', 'BNB Chain', 'Robinhood Chain', 'Base', 'Ethereum'].map((chain) => ({ chain, vol: tokens.filter((token) => token.chain === chain).reduce((sum, token) => sum + Number(token.vol || 0), 0) }))).slice().sort((a, b) => Number(b.vol || 0) - Number(a.vol || 0));
   const total = chains.reduce((sum, item) => sum + item.vol, 0);
   return <><div className="hero"><div><span className="eyebrow"><i /> MARKET DISCOVERY TERMINAL</span><h1>See the move. <em>Earlier.</em></h1><p>Scan the market, spot momentum, and follow the flow.</p></div></div>
     {market?.assets?.length ? <section className="marketstrip">{market.assets.map((asset) => <div key={asset.symbol}><b>{asset.symbol}</b><span>{asset.note || asset.price}</span>{asset.change !== undefined ? <Change value={asset.change} /> : null}</div>)}</section> : null}
     <div className="overview"><article className="sent"><span>Market sentiment</span><strong>{market?.sentiment || '—'} <em>{market?.score || '—'}</em></strong><p><Change value={market?.marketChange} /> market trend</p><b className="ring">{market?.score || '—'}</b></article><article><span>Total market cap</span><strong>{market?.marketCap || '—'}</strong><p><Change value={market?.marketChange} /> in 24h</p></article><article><span>24h crypto volume</span><strong>{market?.volume || '—'}</strong><p><Change value={market?.volumeChange} /> in 24h</p></article><article><span>Tracked on-chain volume</span><strong>{market?.onChain || '—'}</strong><p>Across current radar pairs</p></article></div>
-    {!tokens.length ? <section className="emptybox"><Radar size={28} /><h2>Live market data is unavailable</h2><p>{status}</p></section> : <><div className="twocol"><section className="panel chainpanel"><div className="head"><div><span>CHAIN PULSE</span><h2>Where attention is moving</h2><p>Share of tracked volume across each network.</p></div><ChevronDown size={17} /></div>{chains.map((item) => { const percent = total ? Math.round(item.vol / total * 100) : 0; const isHot = percent > 20; return <div className="chain" key={item.chain}><ChainLogo chain={item.chain} /><div className="chaininfo"><div className="chainheading"><b>{item.chain}</b><Tag hot={isHot}>{isHot ? 'HOT' : 'ACTIVE'}</Tag></div><small>{fmt(item.vol)} <span>24h volume</span></small></div><div className="chainbar" aria-label={`${percent}% of tracked volume`}><i style={{ width: `${Math.max(percent, 1)}%` }} /></div><strong>{percent}%</strong></div>; })}</section><section className="panel"><div className="head"><div><span>NEW & NOTABLE</span><h2>Fresh in the trenches</h2><p>Tokens showing new activity right now.</p></div><ChevronDown size={17} /></div>{tokens.slice(0, 3).map((token) => <button className="new" key={`${token.chain}-${token.symbol}`} onClick={() => open(token)}><Coin token={token} /><span><b>{token.name}</b><small>{token.signal}</small></span><Change value={token.change} /><ArrowUpRight size={15} /></button>)}</section></div><section className="panel"><div className="head"><div><span>MOVING NOW</span><h2>High-signal opportunities</h2><p>Live market activity ranked by the Trench Score.</p></div><button className="button ghost" onClick={() => changePage('Trench Radar')}>Open Radar <ArrowUpRight size={14} /></button></div><Table tokens={tokens.slice(0, 5)} open={open} saved={saved} setSaved={setSaved} /></section></>}</>;
+    {!tokens.length ? <section className="emptybox"><Radar size={28} /><h2>Live market data is unavailable</h2><p>{status}</p></section> : <><div className="twocol"><section className="panel chainpanel"><div className="head"><div><span>CHAIN PULSE</span><h2>Where attention is moving</h2><p>Share of tracked volume across each network.</p></div><ChevronDown size={17} /></div>{chains.map((item) => { const percent = total ? Math.round(item.vol / total * 100) : 0; const isHot = percent > 20; return <div className="chain" key={item.chain}><ChainLogo chain={item.chain} /><div className="chaininfo"><div className="chainheading"><b>{item.chain}</b><Tag hot={isHot}>{isHot ? 'HOT' : 'ACTIVE'}</Tag></div><small>{fmt(item.vol)} <span>24h volume</span></small></div><div className="chainbar" aria-label={`${percent}% of tracked volume`}><i style={{ width: `${Math.max(percent, 1)}%` }} /></div><strong>{percent}%</strong></div>; })}</section><section className="panel"><div className="head"><div><span>NEW & NOTABLE</span><h2>Fresh in the trenches</h2><p>Tokens showing new activity right now.</p></div><ChevronDown size={17} /></div>{tokens.slice(0, 3).map((token) => <button className="new" key={`${token.chain}-${token.symbol}`} onClick={() => open(token)}><Coin token={token} /><span><b>{token.name}</b><small>{token.signal}</small></span><Change value={token.change} /><ArrowUpRight size={15} /></button>)}</section></div><section className="panel"><div className="head"><div><span>MOVING NOW</span><h2>High-signal opportunities</h2><p>Live market activity ranked by the Trench Score.</p></div><button className="button ghost" onClick={() => changePage('Trench Radar')}>Open Radar <ArrowUpRight size={14} /></button></div><Table tokens={tokens.slice(0, 5)} open={open} saved={saved} setSaved={setSaved} /></section></>}<RwaPulse /></>;
 }
 
 function RadarPage({ tokens, status, open, saved, setSaved }) {
