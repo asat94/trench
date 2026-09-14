@@ -37,7 +37,8 @@ function chunks(items, size) {
 }
 
 function trackedChain(platform = {}) {
-  const text = `${platform.name || ''} ${platform.slug || ''} ${platform.symbol || ''}`.toLowerCase();
+  const safePlatform = platform || {};
+  const text = `${safePlatform.name || ''} ${safePlatform.slug || ''} ${safePlatform.symbol || ''}`.toLowerCase();
   if (/robinhood/.test(text)) return 'Robinhood Chain';
   if (/\b(bnb|bsc)\b|binance-smart-chain|bnb-smart-chain/.test(text)) return 'BNB Chain';
   if (/solana|\bsol\b/.test(text)) return 'Solana';
