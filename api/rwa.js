@@ -2,10 +2,11 @@ import { cacheGet, cacheSet } from './_cache.js';
 
 const CMC = 'https://pro-api.coinmarketcap.com';
 const ROBINHOOD = 'https://api.robinhood.com/rhj';
+const LLAMA = 'https://api.llama.fi';
 const CHAIN_NAMES = ['BNB Chain', 'Solana', 'Robinhood Chain', 'Ethereum', 'Base'];
+const LLAMA_CHAINS = { 'BNB Chain': 'BSC', Solana: 'Solana', 'Robinhood Chain': 'Robinhood Chain', Ethereum: 'Ethereum', Base: 'Base' };
 const PERIOD_MS = { '1d': 86400000, '7d': 7 * 86400000, '30d': 30 * 86400000 };
 const MAX_ASSETS = 100;
-const MAX_HOLDER_TOKENS = 4;
 
 const finite = (value) => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? Number(value) : null;
 const sumValues = (values) => {
@@ -48,11 +49,24 @@ function trackedChain(platform = {}) {
 }
 
 function blankChain(chain) {
-  return { chain, volume: null, holders: null, traders: null, value: null, tokenCount: 0, contracts: [] };
+  return { chain, tokenVolume1d: null, tokenVolume7d: null, tokenVolume30d: null, tokenValue: null, tokenCount: 0, contracts: [] };
 }
 
 function unpackInfo(data) {
   return Object.values(data?.data || {}).flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean);
+}
+
+function unpackQuotes(data) {
+  const assets = Array.isArray(data?.data) ? data.data : Object.values(data?.data || {}).flatMap((value) => Array.isArray(value) ? value : [value]);
+  return assets.filter(Boolean).map((asset) => {
+    const quotes = Array.isArray(asset.quote) ? asset.quote : Object.values(asset.quote || {});
+    return [Number(asset.id), quotes.find((quote) => quote?.symbol === 'USD') || quotes[0] || {}];
+  });
+}
+
+function addValue(target, key, value) {
+  const number = finite(value);
+  if (number !== null) target[key] = (target[key] || 0) + number;
 }
 
 async function fetchCmcMarket(market) {
@@ -81,14 +95,25 @@ async function fetchCmcMarket(market) {
   }))).filter((token) => token.crypto_id);
 
   const tokenIds = [...new Set(tokens.map((token) => token.crypto_id))].slice(0, 250);
-  const infoPages = tokenIds.length ? await atStage('cmc-token-platforms', Promise.all(chunks(tokenIds, 100).map((ids) => {
-    const infoUrl = new URL(`${CMC}/v2/cryptocurrency/info`);
-    infoUrl.searchParams.set('id', ids.join(','));
-    infoUrl.searchParams.set('aux', 'platform');
-    infoUrl.searchParams.set('skip_invalid', 'true');
-    return getJson(infoUrl, { headers: cmcHeaders() });
-  }))) : [];
+  const tokenBatches = chunks(tokenIds, 100);
+  const [infoPages, marketPages] = tokenIds.length ? await Promise.all([
+    atStage('cmc-token-platforms', Promise.all(tokenBatches.map((ids) => {
+      const infoUrl = new URL(`${CMC}/v2/cryptocurrency/info`);
+      infoUrl.searchParams.set('id', ids.join(','));
+      infoUrl.searchParams.set('aux', 'platform');
+      infoUrl.searchParams.set('skip_invalid', 'true');
+      return getJson(infoUrl, { headers: cmcHeaders() });
+    }))),
+    atStage('cmc-token-periods', Promise.all(tokenBatches.map((ids) => {
+      const marketUrl = new URL(`${CMC}/v3/cryptocurrency/quotes/latest`);
+      marketUrl.searchParams.set('id', ids.join(','));
+      marketUrl.searchParams.set('aux', 'volume_7d,volume_30d');
+      marketUrl.searchParams.set('skip_invalid', 'true');
+      return getJson(marketUrl, { headers: cmcHeaders() });
+    })))
+  ]) : [[], []];
   const infoById = new Map(infoPages.flatMap(unpackInfo).map((item) => [Number(item.id), item]));
+  const quoteById = new Map(marketPages.flatMap(unpackQuotes));
   const chains = new Map(CHAIN_NAMES.map((chain) => [chain, blankChain(chain)]));
 
   for (const token of tokens) {
@@ -96,8 +121,11 @@ async function fetchCmcMarket(market) {
     const chainName = trackedChain(platform);
     if (!chainName) continue;
     const chain = chains.get(chainName);
-    chain.volume = (chain.volume || 0) + (finite(token.volume_24h) || 0);
-    chain.value = (chain.value || 0) + (finite(token.market_cap) || 0);
+    const quote = quoteById.get(Number(token.crypto_id)) || {};
+    addValue(chain, 'tokenVolume1d', quote.volume_24h ?? token.volume_24h);
+    addValue(chain, 'tokenVolume7d', quote.volume_7d);
+    addValue(chain, 'tokenVolume30d', quote.volume_30d);
+    addValue(chain, 'tokenValue', quote.market_cap ?? token.market_cap);
     chain.tokenCount += 1;
     if (platform?.token_address) chain.contracts.push({
       address: platform.token_address,
@@ -113,25 +141,6 @@ async function fetchCmcMarket(market) {
   };
 }
 
-async function holderCount(contract) {
-  const url = new URL(`${CMC}/public-api/v1/dex/holders/count`);
-  url.searchParams.set('platform', contract.platform);
-  url.searchParams.set('tokenAddress', contract.address);
-  try {
-    const data = await getJson(url, { headers: { Accept: 'application/json' } }, 3500);
-    return finite(data?.count ?? data?.data?.count);
-  } catch { return null; }
-}
-
-async function addTrackedHolders(chains) {
-  await Promise.all(chains.map(async (chain) => {
-    const contracts = chain.contracts.sort((a, b) => b.weight - a.weight).slice(0, MAX_HOLDER_TOKENS);
-    if (!contracts.length) return;
-    const counts = await Promise.all(contracts.map(holderCount));
-    chain.holders = sumValues(counts);
-  }));
-}
-
 async function fetchRobinhoodCoverage() {
   try {
     const data = await getJson(`${ROBINHOOD}/assets`, { headers: { Accept: 'application/json' } }, 4500);
@@ -143,70 +152,73 @@ async function fetchRobinhoodCoverage() {
   } catch { return { assetCount: null, deploymentCount: null }; }
 }
 
+async function fetchDefiLlama() {
+  const dexRequests = CHAIN_NAMES.map(async (chain) => {
+    try {
+      const slug = encodeURIComponent(LLAMA_CHAINS[chain]);
+      const data = await getJson(`${LLAMA}/overview/dexs/${slug}?excludeTotalDataChart=false&excludeTotalDataChartBreakdown=true`, {}, 8000);
+      const cutoff = Date.now() / 1000 - 31 * 86400;
+      const series = (data?.totalDataChart || []).map((point) => [Number(point[0]), finite(point[1])]).filter(([timestamp, value]) => timestamp >= cutoff && value !== null);
+      return [chain, { dexVolume1d: finite(data?.total24h), dexVolume7d: finite(data?.total7d), dexVolume30d: finite(data?.total30d), dexSeries: series }];
+    } catch { return [chain, { dexVolume1d: null, dexVolume7d: null, dexVolume30d: null, dexSeries: [] }]; }
+  });
+  const [dexEntries, tvlData] = await Promise.all([
+    Promise.all(dexRequests),
+    getJson(`${LLAMA}/v2/chains`, {}, 8000).catch(() => [])
+  ]);
+  const tvlByChain = new Map((tvlData || []).map((item) => [String(item.name).toLowerCase(), finite(item.tvl)]));
+  return new Map(dexEntries.map(([chain, data]) => {
+    const llamaName = LLAMA_CHAINS[chain].toLowerCase();
+    return [chain, { ...data, tvl: tvlByChain.get(llamaName) ?? null }];
+  }));
+}
+
 async function currentSnapshot(market) {
-  const cacheKey = `trench:rwa:current:v3:${market}`;
+  const cacheKey = `trench:rwa:current:v5:${market}`;
   const cached = await cacheGet(cacheKey);
   if (cached) return cached;
-  const [cmc, robinhood] = await Promise.all([fetchCmcMarket(market), fetchRobinhoodCoverage()]);
-  await addTrackedHolders(cmc.chains);
+  const [cmc, robinhood, defi] = await Promise.all([fetchCmcMarket(market), fetchRobinhoodCoverage(), fetchDefiLlama()]);
   const snapshot = {
     ts: Date.now(),
     updated: cmc.updated,
     assetCount: cmc.assetCount,
     robinhood,
-    chains: cmc.chains.map(({ contracts, ...chain }) => chain)
+    chains: cmc.chains.map(({ contracts, ...chain }) => ({ ...chain, ...defi.get(chain.chain) }))
   };
-  await cacheSet(cacheKey, snapshot, 300);
+  await cacheSet(cacheKey, snapshot, 3600);
   return snapshot;
 }
-
-function downsample(snapshots, period) {
-  const selected = snapshots.filter((item) => item.ts >= Date.now() - PERIOD_MS[period]).sort((a, b) => a.ts - b.ts);
-  if (period === '1d') return selected.slice(-24);
-  const daily = new Map();
-  for (const item of selected) daily.set(new Date(item.ts).toISOString().slice(0, 10), item);
-  return [...daily.values()].slice(period === '7d' ? -7 : -30);
-}
-
-async function storeHistory(market, snapshot) {
-  const key = `trench:rwa:history:v3:${market}`;
-  const previous = await cacheGet(key);
-  const history = Array.isArray(previous) ? previous.filter((item) => item?.ts > Date.now() - 31 * 86400000) : [];
-  const last = history.at(-1);
-  if (!last || snapshot.ts - last.ts > 45 * 60000) history.push(snapshot);
-  else history[history.length - 1] = snapshot;
-  await cacheSet(key, history, 32 * 86400);
-  return history;
-}
-
-function responseFrom(history, snapshot, market, period) {
-  const selected = downsample(history, period);
+function responseFrom(snapshot, market, period) {
+  const cutoff = Date.now() / 1000 - PERIOD_MS[period] / 1000;
   const chains = CHAIN_NAMES.map((chainName) => {
-    const metrics = { volume: [], holders: [], traders: [], value: [] };
-    for (const item of selected) {
-      const chain = item.chains.find((entry) => entry.chain === chainName);
-      for (const metric of Object.keys(metrics)) {
-        const value = finite(chain?.[metric]);
-        if (value !== null) metrics[metric].push(value);
-      }
-    }
-    return { chain: chainName, metrics };
+    const chain = snapshot.chains.find((entry) => entry.chain === chainName) || {};
+    const metricValue = (value) => finite(value) === null ? [] : [finite(value)];
+    const metrics = {
+      tokenVolume: metricValue(chain[`tokenVolume${period}`]),
+      tokenValue: metricValue(chain.tokenValue),
+      dexVolume: (chain.dexSeries || []).filter(([timestamp]) => timestamp >= cutoff).map(([, value]) => value),
+      tvl: metricValue(chain.tvl)
+    };
+    const summaries = {
+      tokenVolume: finite(chain[`tokenVolume${period}`]),
+      tokenValue: finite(chain.tokenValue),
+      dexVolume: finite(chain[`dexVolume${period}`]),
+      tvl: finite(chain.tvl)
+    };
+    return { chain: chainName, metrics, summaries };
   });
-  const totals = Object.fromEntries(['volume', 'holders', 'traders', 'value'].map((metric) => [
+  const totals = Object.fromEntries(['tokenVolume', 'tokenValue', 'dexVolume', 'tvl'].map((metric) => [
     metric,
-    sumValues(chains.map((chain) => chain.metrics[metric].at(-1)).filter((value) => value !== undefined))
+    sumValues(chains.map((chain) => chain.summaries[metric]))
   ]));
-  const robinhoodCount = snapshot.robinhood?.deploymentCount;
   return {
     live: true,
     market,
     period,
     updated: new Date(snapshot.updated || snapshot.ts).toLocaleString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }),
-    historyPoints: selected.length,
     totals,
     chains,
-    note: `Live CMC RWA coverage across the five tracked networks${Number.isFinite(robinhoodCount) ? `; Robinhood reports ${robinhoodCount} active stock-token deployments` : ''}. Holder totals cover up to four leading tracked tokens per chain. Active-wallet history needs a separate onchain feed.`,
-    sources: ['CoinMarketCap', 'Robinhood']
+    sources: ['CoinMarketCap', 'DefiLlama']
   };
 }
 
@@ -221,8 +233,7 @@ export default async function handler(req, res) {
 
   try {
     const snapshot = await currentSnapshot(market);
-    const history = await storeHistory(market, snapshot);
-    return res.status(200).json(responseFrom(history, snapshot, market, period));
+    return res.status(200).json(responseFrom(snapshot, market, period));
   } catch (error) {
     const message = error?.status === 401 || error?.status === 403
       ? 'CoinMarketCap rejected this key or the current API plan does not include the RWA endpoint.'
