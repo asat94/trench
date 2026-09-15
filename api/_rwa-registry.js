@@ -100,7 +100,7 @@ export async function loadRegistry(market, signal) {
   const info = [];
   const tokens = [...tokenIds];
   for (let i = 0; i < tokens.length; i += 100) {
-    const data = await cmc('/v2/cryptocurrency/info', { id: tokens.slice(i, i + 100).join(',') }, signal);
+    const data = await cmc('/v2/cryptocurrency/info', { id: tokens.slice(i, i + 100).join(','), skip_invalid: 'true' }, signal);
     if (!data || typeof data !== 'object') throw new Error('registry_invalid');
     info.push(...Object.values(data).flatMap((value) => Array.isArray(value) ? value : [value]));
   }
