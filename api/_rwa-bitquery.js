@@ -31,7 +31,7 @@ async function cachedQuery(key, query, variables, signal) {
     if (!await reserveRefresh(key, signal)) return cached || { error: 'refreshing' };
     let result;
     try { result = { data: await bitquery(query, variables, signal), at: Date.now() }; }
-    catch (error) { result = { error: error.code || 'unavailable', at: Date.now() }; }
+    catch (error) { result = { error: error.code || 'unavailable', detail: error.details, at: Date.now() }; }
     // Failed requests are cached briefly, so refreshing the UI doesn't burn credits.
     await cacheSet(key, result, result.error ? 300 : 21600);
     return result;
@@ -59,15 +59,15 @@ export async function fetchBitqueryPulse(market, period, now = Date.now()) {
     ]);
     let volumes = new Map(), counts = new Map();
     try {
-      if (volumeResult.error) throw new Error(volumeResult.error);
+      if (volumeResult.error) { const error = new Error(volumeResult.error); error.detail = volumeResult.detail; throw error; }
       volumes = parseVolume(volumeResult.data, days);
       if (volumes.size) refreshed.push(volumeResult.at);
-    } catch (error) { issues.push({ chain, metric: 'volume', code: error.code || error.message }); }
+    } catch (error) { issues.push({ chain, metric: 'volume', code: error.code || error.message, detail: error.detail }); }
     try {
-      if (holderResult.error) throw new Error(holderResult.error);
+      if (holderResult.error) { const error = new Error(holderResult.error); error.detail = holderResult.detail; throw error; }
       counts = parseHolders(holderResult.data, selectedDays);
       if ([...counts.values()].some(Number.isFinite)) refreshed.push(holderResult.at);
-    } catch (error) { issues.push({ chain, metric: 'holders', code: error.code || error.message }); }
+    } catch (error) { issues.push({ chain, metric: 'holders', code: error.code || error.message, detail: error.detail }); }
     return selectedDays.map((day) => ({ blockchain: chain, day, onchain_volume_usd: volumes.get(day) ?? null, holders: counts.get(day) ?? null }));
   }));
   return {

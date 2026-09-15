@@ -1,6 +1,13 @@
 const ENDPOINT = 'https://streaming.bitquery.io/graphql';
 export class BitqueryError extends Error {
-  constructor(code) { super(code); this.code = code; }
+  constructor(code, details) { super(code); this.code = code; this.details = details; }
+}
+function safeDetail(value) {
+  let detail = String(value || '');
+  for (const key of ['CMC_API_KEY', 'BITQUERY_ACCESS_TOKEN', 'DUNE_API_KEY']) {
+    if (process.env[key]) detail = detail.split(process.env[key]).join('[redacted]');
+  }
+  return detail.slice(0, 700);
 }
 export async function bitquery(query, variables, signal) {
   const token = process.env.BITQUERY_ACCESS_TOKEN?.trim();
@@ -9,12 +16,16 @@ export async function bitquery(query, variables, signal) {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ query, variables }), signal
   });
-  if (!response.ok) throw new BitqueryError(response.status === 401 ? 'authentication' : response.status === 403 ? 'access' : response.status === 429 ? 'rate_limit' : 'upstream');
-  const body = await response.json();
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new BitqueryError(response.status === 401 ? 'authentication' : response.status === 403 ? 'access' : response.status === 429 ? 'rate_limit' : 'upstream', safeDetail(body.message || body.error || body.errors?.map((e) => e.message).join(' ') || `HTTP ${response.status}`));
   if (body.errors?.length) {
     // Never forward upstream messages: they can contain request details or credentials.
-    const message = body.errors.map((e) => String(e.message)).join(' ').toLowerCase();
-    throw new BitqueryError(/point|quota|limit|credit/.test(message) ? 'rate_limit' : /permission|authoriz|access|plan/.test(message) ? 'access' : 'query');
+    let detail = body.errors.map((e) => String(e.message)).join(' ');
+    for (const key of ['CMC_API_KEY', 'BITQUERY_ACCESS_TOKEN', 'DUNE_API_KEY']) {
+      if (process.env[key]) detail = detail.split(process.env[key]).join('[redacted]');
+    }
+    const message = detail.toLowerCase();
+    throw new BitqueryError(/point|quota|limit|credit/.test(message) ? 'rate_limit' : /permission|authoriz|access|plan/.test(message) ? 'access' : 'query', detail.slice(0, 700));
   }
   if (!body.data) throw new BitqueryError('empty_response');
   return body.data;

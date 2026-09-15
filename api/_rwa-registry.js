@@ -45,11 +45,11 @@ async function cmc(path, params, signal) {
   const body = await response.json();
   if (!response.ok) {
     const error = new Error(`registry_http_${response.status}`);
-    let message = String(body.status?.error_message || '').slice(0, 500);
+    let message = String(body.status?.error_message || '');
     for (const key of ['CMC_API_KEY', 'BITQUERY_ACCESS_TOKEN', 'DUNE_API_KEY']) {
       if (process.env[key]) message = message.split(process.env[key]).join('[redacted]');
     }
-    error.details = { endpoint: path, code: body.status?.error_code, message };
+    error.details = { endpoint: path, code: /^\d+$/.test(String(body.status?.error_code)) ? Number(body.status.error_code) : null, message: message.slice(0, 500) };
     throw error;
   }
   // CMC endpoints may encode the success code as either 0 or "0".
