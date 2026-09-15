@@ -6,3 +6,14 @@
 .rp-chain-values,.rp-legend{border-top:1px solid #2a362d;padding-top:18px;display:flex;gap:12px;flex-wrap:wrap}.rp-chain-values>div,.rp-legend button{display:flex;align-items:center;gap:8px;font-size:14px;min-width:0}.rp-chain-values>div{flex:1 1 155px;flex-wrap:wrap}.rp-chain-values strong{font-size:14px;margin-left:auto}.rp-logo{width:30px;height:30px;display:grid;place-items:center;border-radius:50%;background:#121c16;border:1px solid #37463b;flex:none;overflow:hidden}.rp-logo img{display:block;width:22px;height:22px;object-fit:contain}.rp-legend button{background:#111b14;border:1px solid #354238;border-bottom:3px solid var(--chain-color);border-radius:8px;padding:8px 10px;color:#dfebe1;cursor:pointer}.rp-legend button[aria-pressed=false]{opacity:.5}.rp-legend strong{font-size:13px}.rp-footnote{font-size:12px;color:#8e9f93;margin:0;line-height:1.6}
 @media(max-width:760px){.rp-heading{align-items:flex-start;flex-direction:column}.rp-heading h1{font-size:29px}.rp-controls{flex-wrap:wrap}.rp-controls button{padding:11px 13px}.rp-cards{gap:12px}.rp-cards article{padding:18px}.rp-cards strong{font-size:28px}.rp-chart{padding:16px}.rp-chart-heading{align-items:flex-start;flex-direction:column}.rp-chain-values>div{flex-basis:100%}.rp-legend button{flex:1 1 180px}.rp-legend strong{margin-left:auto}}
 @media(max-width:420px){.rp-cards{grid-template-columns:1fr}}
+
+/* Equal chain tiles keep long names and figures on consistent baselines. */
+.rp-chain-values,.rp-legend{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-items:stretch}
+.rp-chain-values>div,.rp-legend button{display:grid;grid-template-columns:30px minmax(0,1fr);grid-template-rows:minmax(38px,auto) auto;column-gap:9px;row-gap:8px;padding:12px;align-items:center;text-align:left;min-width:0;background:#111b14;border:1px solid #354238;border-radius:10px}
+.rp-chain-values>div>span:not(.rp-logo),.rp-legend button>span:not(.rp-logo){font-size:13px;line-height:1.35;overflow-wrap:normal}
+.rp-chain-values strong,.rp-legend strong{grid-column:2;margin:0;font-size:15px;line-height:1.3;white-space:nowrap;font-variant-numeric:tabular-nums}
+.rp-legend button{border-bottom:3px solid var(--chain-color)}
+.rp-chain-values .rp-logo,.rp-legend .rp-logo{grid-column:1;grid-row:1}
+@media(max-width:1100px){.rp-chain-values,.rp-legend{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:600px){.rp-chain-values,.rp-legend{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:360px){.rp-chain-values,.rp-legend{grid-template-columns:1fr}}
