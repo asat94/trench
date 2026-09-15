@@ -1,10 +1,30 @@
-# RWA Pulse v0.14
+# RWA Pulse v0.15
 
 ## Status
 
-The separate sidebar page and two charts are implemented. Production category-specific data is NOT verified or connected. Only DUNE_API_KEY has been configured by the owner. No queries or query IDs exist yet. This package displays an honest awaiting-data state until results are available.
+The separate sidebar page and two charts are implemented. The endpoint now reads BITQUERY_ACCESS_TOKEN and uses Bitquery for onchain data, with CMC for the token catalogue and Robinhood's public catalogue for matching deployments. Local fixture tests and the production build pass. Live Bitquery queries and the account's historical-data entitlement have NOT yet been verified. This package must be tested against the production credentials before being described as a complete live feed.
 
-Do not deploy expecting Base volume or holder history to be populated automatically.
+## Bitquery connection
+
+Required existing server environment variables: BITQUERY_ACCESS_TOKEN and CMC_API_KEY. UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN coordinate request caching across instances. Keys never enter frontend code or URLs.
+
+The catalogue follows CMC RWA assets, resolves token IDs to contract addresses, and includes secondary deployments and recognized token explorer links. Tokenized Stocks selects the stock asset type. RWA Market includes CMC's RWA categories. The query covers these tracked contracts, not a claim of every token issued worldwide. Catalogue discovery rejects incomplete pagination (maximum 1,000 assets) or more than 1,500 token IDs rather than silently taking a top-token sample.
+
+Volume uses daily archive DEXTradeByTokens aggregates over 30 complete UTC days. The selected 1D/7D/30D view sums its corresponding days. Trades between two tracked tokens have both sides counted by that cube, so half of their two-sided amount is removed. This measures DEX swaps; it does not include private broker executions, primary issuance, CEX trading, or all token transfers. Missing daily rows remain unknown until indexing coverage is confirmed.
+
+EVM holder queries request positive-balance distinct addresses across the tracked token set at each daily archive snapshot. They never sum per-token holder counts. Schema and entitlement require live validation. Solana holder history remains unavailable: the short-retention BalanceUpdates feed cannot establish the complete holder population. A separate complete holder source is still required for Solana.
+
+Successful query results are cached for six hours; errors and refresh leases for five minutes. The registry is cached for one day. Switching periods reuses volume history. Each uncached period requests up to five volume queries and four holder queries (up to 30 daily holder aggregates per network). Query cost depends on the account plan; no paid upgrade or query-credit purchase is performed. Dune remains supported when no Bitquery token is configured and saved Dune query IDs are present.
+
+Inspect /api/rwa?market=stocks&period=7d after deployment. The diagnostics array contains only safe chain/metric/error codes. authentication indicates a rejected token; access indicates a plan or permission limitation; rate_limit indicates credits or throttling; query requires checking the current provider schema. No secret or raw upstream message is returned. Verify 1D, 7D and 30D separately and compare known tokens against the provider before treating coverage as verified.
+
+Additional references:
+
+- https://docs.bitquery.io/docs/blockchain/Ethereum/dextrades/token-trades-apis/
+- https://docs.bitquery.io/docs/blockchain/Ethereum/transfers/rwa-api/
+- https://docs.bitquery.io/docs/blockchain/Ethereum/token-holders/token-holder-api/
+- https://docs.bitquery.io/docs/blockchain/Solana/solana-token-holders/
+- https://api.robinhood.com/rhj/assets
 
 ## Optional Dune connection
 
@@ -48,4 +68,4 @@ Validate SQL and query coverage before setting the IDs. Schedule refreshes withi
 
 ## Verification
 
-Run npm run build and node work/test-rwa-pulse.mjs. The test uses synthetic fixtures only; no fixture data is included in production responses.
+Run npm run build, node work/test-rwa-pulse.mjs, and node work/test-bitquery.mjs. Tests use synthetic fixtures only; no fixture data is included in production responses.

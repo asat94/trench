@@ -1,5 +1,6 @@
 import { cacheGet, cacheSet } from './_cache.js';
 import { normalizeRows, createPulse } from './_rwa-data.js';
+import { fetchBitqueryPulse } from './_rwa-bitquery.js';
 
 export default async function handler(req, res) {
   const market = req.query.market === 'stocks' ? 'stocks' : 'rwa';
@@ -7,6 +8,24 @@ export default async function handler(req, res) {
   const queryId = market === 'stocks' ? process.env.DUNE_STOCKS_QUERY_ID : process.env.DUNE_RWA_QUERY_ID;
   const empty = (reason, message) => ({ ...createPulse([], market, period, null), available: false, reason, message });
   res.setHeader('Cache-Control', 'no-store');
+  if (process.env.BITQUERY_ACCESS_TOKEN?.trim()) {
+    try {
+      const snapshot = await fetchBitqueryPulse(market, period);
+      const result = createPulse(snapshot.rows, market, period, snapshot.updated);
+      const available = result.coverage.volume > 0 || result.coverage.holders > 0;
+      res.setHeader('Cache-Control', 's-maxage=300');
+      return res.status(200).json({ ...result, available, tokenCounts: snapshot.tokenCounts,
+        reason: available ? 'partial_coverage' : 'provider_unavailable',
+        message: available ? 'Figures cover tracked token contracts. Some networks or historical dates may be unavailable.' : 'Data could not be loaded for this period. Please try again later.',
+        // Safe codes make deployment diagnosis possible without exposing keys or queries.
+        diagnostics: snapshot.issues
+      });
+    } catch (error) {
+      const known = ['registry_key_missing', 'registry_invalid', 'registry_catalogue_incomplete', 'registry_token_coverage', 'registry_rejected'];
+      const code = known.includes(error.message) || /^registry_http_\d{3}$/.test(error.message) ? error.message : 'upstream_unavailable';
+      return res.status(502).json({ ...empty(code, 'Data could not be loaded for this period. Please try again later.'), version: 'bitquery-v1' });
+    }
+  }
   if (!process.env.DUNE_API_KEY || !/^\d+$/.test(queryId || '')) {
     return res.status(200).json(empty('setup_required', 'Market data is being connected.'));
   }
