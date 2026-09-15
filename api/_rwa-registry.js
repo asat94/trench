@@ -60,12 +60,22 @@ export async function loadRegistry(market, signal) {
   if (!process.env.CMC_API_KEY) throw new Error('registry_key_missing');
   const assets = [];
   let complete = false;
-  // A hard bound prevents an unexpected catalogue expansion from exhausting credits.
-  for (let page = 0; page < 4; page++) {
-    const data = await cmc('/v5/real-world-assets/assets/list', { start: page * 250 + 1, limit: 250, sort: 'tokenized_market_cap', sort_dir: 'desc', ...(market === 'stocks' ? { asset_type: 'stock' } : {}) }, signal);
+  // CMC's catalogue includes underlying assets without any issued tokens.
+  // Advance by the number actually returned, and use total_size as well as has_more.
+  let offset = 1;
+  for (let page = 0; page < 64; page++) {
+    const pageKey = `${key}:page:${offset}`;
+    let data = await cacheGet(pageKey);
+    if (!data) {
+      data = await cmc('/v5/real-world-assets/assets/list', { start: offset, limit: 250, sort: 'rwa_rank', sort_dir: 'asc', ...(market === 'stocks' ? { asset_type: 'stock' } : {}) }, signal);
+      await cacheSet(pageKey, data, 3600);
+    }
     if (!Array.isArray(data?.rwa_assets)) throw new Error('registry_invalid');
     assets.push(...data.rwa_assets.filter((a) => a.has_tokens));
-    if (data.has_more === false) { complete = true; break; }
+    offset += data.rwa_assets.length;
+    const total = Number(data.total_size);
+    if (data.has_more === false || data.has_more === 'false' || (Number.isFinite(total) && total >= 0 && offset > total)) { complete = true; break; }
+    if (!data.rwa_assets.length) throw new Error('registry_catalogue_incomplete');
   }
   if (!complete) throw new Error('registry_catalogue_incomplete');
   const ids = [...new Set(assets.map((a) => a.rwa_id).filter((id) => Number.isInteger(id) && id > 0))];
