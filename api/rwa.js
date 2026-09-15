@@ -23,7 +23,7 @@ export default async function handler(req, res) {
     } catch (error) {
       const known = ['registry_key_missing', 'registry_invalid', 'registry_catalogue_incomplete', 'registry_token_coverage', 'registry_rejected'];
       const code = known.includes(error.message) || /^registry_http_\d{3}$/.test(error.message) || /^registry_rejected_(\d+|unknown)$/.test(error.message) ? error.message : 'upstream_unavailable';
-      return res.status(502).json({ ...empty(code, 'Data could not be loaded for this period. Please try again later.'), version: 'bitquery-v1.1' });
+      return res.status(502).json({ ...empty(code, 'Data could not be loaded for this period. Please try again later.'), version: 'bitquery-v1.2', diagnostics: error.details || null });
     }
   }
   if (!process.env.DUNE_API_KEY || !/^\d+$/.test(queryId || '')) {

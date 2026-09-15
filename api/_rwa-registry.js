@@ -42,8 +42,16 @@ async function cmc(path, params, signal) {
   const url = new URL(path, CMC);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, String(value));
   const response = await fetch(url, { headers: { 'X-CMC_PRO_API_KEY': process.env.CMC_API_KEY }, signal });
-  if (!response.ok) throw new Error(`registry_http_${response.status}`);
   const body = await response.json();
+  if (!response.ok) {
+    const error = new Error(`registry_http_${response.status}`);
+    let message = String(body.status?.error_message || '').slice(0, 500);
+    for (const key of ['CMC_API_KEY', 'BITQUERY_ACCESS_TOKEN', 'DUNE_API_KEY']) {
+      if (process.env[key]) message = message.split(process.env[key]).join('[redacted]');
+    }
+    error.details = { endpoint: path, code: body.status?.error_code, message };
+    throw error;
+  }
   // CMC endpoints may encode the success code as either 0 or "0".
   // A truthiness check treats "0" as an error and prevents every Bitquery request.
   const code = body.status?.error_code;
