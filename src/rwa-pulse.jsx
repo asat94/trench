@@ -13,10 +13,10 @@ const dateLabel = (day) => new Date(`${day}T00:00:00Z`).toLocaleDateString('en-U
 const full = (v, currency = false) => Number.isFinite(v) ? `${currency ? '$' : ''}${v.toLocaleString('en-US', { maximumFractionDigits: currency ? 2 : 0 })}` : 'Unavailable';
 function Logo({ chain }) { return <span className="rp-logo"><img src={`/chain-icons/${chain.logo}`} alt="" /></span>; }
 
-function VolumeChart({ data }) {
+function VolumeChart({ data, title }) {
   const values = chains.map((c) => data?.chains?.find((d) => d.chain === c.name)?.volume ?? null);
   const maximum = Math.max(1, ...values.filter(Number.isFinite)) * 1.12;
-  return <div className="rp-scroll"><svg className="rp-plot" viewBox="0 0 880 360" role="img" aria-label="Onchain volume by chain. Vertical axis: US dollars. Horizontal axis: chains.">
+  return <div className="rp-scroll"><svg className="rp-plot" viewBox="0 0 880 360" role="img" aria-label={`${title}. Vertical axis: US dollars. Horizontal axis: chains.`}>
     <text className="rp-axis-title" x="85" y="20">Volume (USD)</text>
     {[0, 1, 2, 3, 4].map((i) => <g key={i}><line className="rp-grid" x1="85" x2="860" y1={270 - i * 56} y2={270 - i * 56} /><text className="rp-tick" x="74" y={275 - i * 56} textAnchor="end">{values.some(Number.isFinite) ? compact(maximum * i / 4, true) : '—'}</text></g>)}
     {chains.map((chain, i) => {
@@ -32,7 +32,7 @@ function VolumeChart({ data }) {
   </svg></div>;
 }
 
-function HoldersChart({ data, visible }) {
+function HoldersChart({ data, visible, title }) {
   const rows = chains.filter((c) => visible.has(c.name)).map((c) => ({ ...c, history: data?.chains?.find((d) => d.chain === c.name)?.history || [] }));
   const days = [...new Set(rows.flatMap((c) => c.history.map((p) => p.day)))].sort();
   const valid = rows.flatMap((c) => c.history.map((p) => p.holders)).filter(Number.isFinite);
@@ -42,7 +42,7 @@ function HoldersChart({ data, visible }) {
   const x = (day) => end === start ? 472 : 85 + (Date.parse(day) - start) / (end - start) * 775;
   const y = (value) => 270 - value / max * 224;
   const ticks = [...new Set([0, Math.floor((days.length - 1) / 2), days.length - 1])].filter((i) => i >= 0 && days[i]);
-  return <div className="rp-scroll"><svg className="rp-plot" viewBox="0 0 880 360" role="img" aria-label="Holders by chain. Vertical axis: reported holder counts. Horizontal axis: UTC dates.">
+  return <div className="rp-scroll"><svg className="rp-plot" viewBox="0 0 880 360" role="img" aria-label={`${title}. Vertical axis: reported holder counts. Horizontal axis: UTC dates.`}>
     <text className="rp-axis-title" x="85" y="20">Reported holders</text>
     {[0, 1, 2, 3, 4].map((i) => <g key={i}><line className="rp-grid" x1="85" x2="860" y1={270 - i * 56} y2={270 - i * 56} /><text className="rp-tick" x="74" y={275 - i * 56} textAnchor="end">{valid.length ? compact(max * i / 4) : '—'}</text></g>)}
     {rows.map((chain) => {
@@ -63,6 +63,9 @@ function HoldersChart({ data, visible }) {
 export default function RwaPulse() {
   const [market, setMarket] = useState('rwa');
   const period = '30d';
+  const category = market === 'stocks' ? 'Tokenized Stock' : 'RWA';
+  const volumeTitle = `${category} Transfer Volume by Chain`;
+  const holdersTitle = `${category} Holders by Chain`;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [visible, setVisible] = useState(() => new Set(chains.map((c) => c.name)));
@@ -79,8 +82,8 @@ export default function RwaPulse() {
     <div className="rp-controls"><div aria-label="Asset category">{[['rwa', 'RWA Market'], ['stocks', 'Tokenized Stocks']].map(([key, label]) => <button key={key} aria-pressed={market === key} onClick={() => setMarket(key)}>{label}</button>)}</div><div aria-label="Time range"><span className="rp-status">30D snapshot</span></div></div>
     <div className="rp-cards"><article><span>Total Token Transfer Volume</span><strong>{compact(data?.totals?.volume, true)}</strong><small>{period.toUpperCase()} · {coverageText('volume')}</small></article><article><span>Total Holders</span><strong>{compact(data?.totals?.holders)}</strong><small>Latest reported snapshot · {coverageText('holders')}</small></article></div>
     {data?.message && <p className="rp-notice" role="status">{data.message}</p>}
-    <article className="rp-chart"><div className="rp-chart-heading"><h2>Token Transfer Volume by chain</h2><span>{period.toUpperCase()} · Rolling transfer volume</span></div><VolumeChart data={data} /><div className="rp-chain-values">{chains.map((c) => <div key={c.name}><Logo chain={c} /><span>{c.name}</span><strong>{compact(data?.chains?.find((d) => d.chain === c.name)?.volume, true)}</strong></div>)}</div></article>
-    <article className="rp-chart"><div className="rp-chart-heading"><h2>Holders by chain</h2><span>{period.toUpperCase()} · Available snapshots</span></div><HoldersChart data={data} visible={visible} /><div className="rp-legend">{chains.map((c) => <button key={c.name} aria-pressed={visible.has(c.name)} onClick={() => toggle(c.name)} style={{ '--chain-color': c.color }}><Logo chain={c} /><span>{c.name}</span><strong>{compact(data?.chains?.find((d) => d.chain === c.name)?.holders)}</strong></button>)}</div></article>
+    <article className="rp-chart"><div className="rp-chart-heading"><h2>{volumeTitle}</h2><span>{period.toUpperCase()} · Rolling transfer volume</span></div><VolumeChart data={data} title={volumeTitle} /><div className="rp-chain-values">{chains.map((c) => <div key={c.name}><Logo chain={c} /><span>{c.name}</span><strong>{compact(data?.chains?.find((d) => d.chain === c.name)?.volume, true)}</strong></div>)}</div></article>
+    <article className="rp-chart"><div className="rp-chart-heading"><h2>{holdersTitle}</h2><span>{period.toUpperCase()} · Available snapshots</span></div><HoldersChart data={data} visible={visible} title={holdersTitle} /><div className="rp-legend">{chains.map((c) => <button key={c.name} aria-pressed={visible.has(c.name)} onClick={() => toggle(c.name)} style={{ '--chain-color': c.color }}><Logo chain={c} /><span>{c.name}</span><strong>{compact(data?.chains?.find((d) => d.chain === c.name)?.holders)}</strong></button>)}</div></article>
     <p className="rp-footnote">{data?.methodology || 'Holder counts are not unique people or deduplicated wallets.'}{data?.updated ? ` Updated ${new Date(data.updated).toLocaleString('en-US', { timeZone: 'UTC' })} UTC.` : ''}</p>
   </section>;
 }
