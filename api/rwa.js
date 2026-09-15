@@ -14,7 +14,7 @@ export default async function handler(req, res) {
       const result = createPulse(snapshot.rows, market, period, snapshot.updated);
       const available = result.coverage.volume > 0 || result.coverage.holders > 0;
       res.setHeader('Cache-Control', 's-maxage=300');
-      return res.status(200).json({ ...result, available, tokenCounts: snapshot.tokenCounts,
+      return res.status(200).json({ ...result, available, version: 'bitquery-v1.1', tokenCounts: snapshot.tokenCounts,
         reason: available ? 'partial_coverage' : 'provider_unavailable',
         message: available ? 'Figures cover tracked token contracts. Some networks or historical dates may be unavailable.' : 'Data could not be loaded for this period. Please try again later.',
         // Safe codes make deployment diagnosis possible without exposing keys or queries.
@@ -22,8 +22,8 @@ export default async function handler(req, res) {
       });
     } catch (error) {
       const known = ['registry_key_missing', 'registry_invalid', 'registry_catalogue_incomplete', 'registry_token_coverage', 'registry_rejected'];
-      const code = known.includes(error.message) || /^registry_http_\d{3}$/.test(error.message) ? error.message : 'upstream_unavailable';
-      return res.status(502).json({ ...empty(code, 'Data could not be loaded for this period. Please try again later.'), version: 'bitquery-v1' });
+      const code = known.includes(error.message) || /^registry_http_\d{3}$/.test(error.message) || /^registry_rejected_(\d+|unknown)$/.test(error.message) ? error.message : 'upstream_unavailable';
+      return res.status(502).json({ ...empty(code, 'Data could not be loaded for this period. Please try again later.'), version: 'bitquery-v1.1' });
     }
   }
   if (!process.env.DUNE_API_KEY || !/^\d+$/.test(queryId || '')) {

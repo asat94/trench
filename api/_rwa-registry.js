@@ -44,7 +44,13 @@ async function cmc(path, params, signal) {
   const response = await fetch(url, { headers: { 'X-CMC_PRO_API_KEY': process.env.CMC_API_KEY }, signal });
   if (!response.ok) throw new Error(`registry_http_${response.status}`);
   const body = await response.json();
-  if (body.status?.error_code) throw new Error('registry_rejected');
+  // CMC endpoints may encode the success code as either 0 or "0".
+  // A truthiness check treats "0" as an error and prevents every Bitquery request.
+  const code = body.status?.error_code;
+  if (code !== undefined && code !== null && Number(code) !== 0) {
+    const safeCode = /^\d+$/.test(String(code)) ? String(code) : 'unknown';
+    throw new Error(`registry_rejected_${safeCode}`);
+  }
   return body.data;
 }
 export async function loadRegistry(market, signal) {

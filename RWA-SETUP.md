@@ -1,4 +1,6 @@
-# RWA Pulse v0.15
+# RWA Pulse v0.15.1
+
+Production v0.15 returned registry_rejected before any Bitquery query ran. This revision accepts both numeric 0 and string "0" as CMC success codes. Genuine CMC errors now include their numeric code in the safe reason field (registry_rejected_CODE). The success-code regression test passes; deployment and live verification are still required.
 
 ## Status
 
