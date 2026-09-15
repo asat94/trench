@@ -42,8 +42,8 @@ function HoldersChart({ data, visible }) {
   const x = (day) => end === start ? 472 : 85 + (Date.parse(day) - start) / (end - start) * 775;
   const y = (value) => 270 - value / max * 224;
   const ticks = [...new Set([0, Math.floor((days.length - 1) / 2), days.length - 1])].filter((i) => i >= 0 && days[i]);
-  return <div className="rp-scroll"><svg className="rp-plot" viewBox="0 0 880 360" role="img" aria-label="Holders by chain. Vertical axis: holder addresses. Horizontal axis: UTC dates.">
-    <text className="rp-axis-title" x="85" y="20">Holder addresses</text>
+  return <div className="rp-scroll"><svg className="rp-plot" viewBox="0 0 880 360" role="img" aria-label="Holders by chain. Vertical axis: reported holder counts. Horizontal axis: UTC dates.">
+    <text className="rp-axis-title" x="85" y="20">Reported holders</text>
     {[0, 1, 2, 3, 4].map((i) => <g key={i}><line className="rp-grid" x1="85" x2="860" y1={270 - i * 56} y2={270 - i * 56} /><text className="rp-tick" x="74" y={275 - i * 56} textAnchor="end">{valid.length ? compact(max * i / 4) : '—'}</text></g>)}
     {rows.map((chain) => {
       let previous = null;
@@ -52,7 +52,7 @@ function HoldersChart({ data, visible }) {
         const command = previous ? 'L' : 'M'; previous = point;
         return `${command}${x(point.day)},${y(point.holders)}`;
       }).join(' ');
-      return <g key={chain.name}><path d={path} fill="none" stroke={chain.color} strokeWidth="3" strokeLinejoin="round" />{chain.history.filter((p) => Number.isFinite(p.holders)).map((p) => <circle key={p.day} cx={x(p.day)} cy={y(p.holders)} r="3.5" fill={chain.color}><title>{chain.name} · {dateLabel(p.day)}: {full(p.holders)} holders</title></circle>)}</g>;
+      return <g key={chain.name}><path d={path} fill="none" stroke={chain.color} strokeWidth="3" strokeDasharray="6 4" strokeLinejoin="round" />{chain.history.filter((p) => Number.isFinite(p.holders)).map((p) => <circle key={p.day} cx={x(p.day)} cy={y(p.holders)} r="3.5" fill={chain.color}><title>{chain.name} · {dateLabel(p.day)}: {full(p.holders)} holders</title></circle>)}</g>;
     })}
     {ticks.map((i) => <text key={i} className="rp-tick" x={x(days[i])} y="299" textAnchor={i === 0 && days.length > 1 ? 'start' : i === days.length - 1 && days.length > 1 ? 'end' : 'middle'}>{dateLabel(days[i])}</text>)}
     {!valid.length && <text className="rp-empty" x="472" y="155" textAnchor="middle">{visible.size ? 'Holder history is not available yet' : 'Select a chain below'}</text>}
@@ -62,7 +62,7 @@ function HoldersChart({ data, visible }) {
 
 export default function RwaPulse() {
   const [market, setMarket] = useState('rwa');
-  const [period, setPeriod] = useState('30d');
+  const period = '30d';
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [visible, setVisible] = useState(() => new Set(chains.map((c) => c.name)));
@@ -75,12 +75,12 @@ export default function RwaPulse() {
   const toggle = (name) => setVisible((old) => { const next = new Set(old); next.has(name) ? next.delete(name) : next.add(name); return next; });
   const coverageText = (key) => loading ? 'Loading…' : data?.coverage?.[key] === 5 ? 'Across five chains' : `${data?.coverage?.[key] || 0} of 5 chains available`;
   return <section className="rp-page" aria-busy={loading}>
-    <div className="rp-heading"><div><span className="rp-eyebrow">REAL-WORLD ASSET PULSE</span><h1>RWA Pulse</h1><p>Track where onchain volume and holders are moving.</p></div><span className="rp-status">{loading ? 'Loading' : data?.live ? 'Updated' : data?.available ? 'Partial coverage' : 'Awaiting data'}</span></div>
-    <div className="rp-controls"><div aria-label="Asset category">{[['rwa', 'RWA Market'], ['stocks', 'Tokenized Stocks']].map(([key, label]) => <button key={key} aria-pressed={market === key} onClick={() => setMarket(key)}>{label}</button>)}</div><div aria-label="Time range">{['1d', '7d', '30d'].map((key) => <button key={key} aria-pressed={period === key} onClick={() => setPeriod(key)}>{key.toUpperCase()}</button>)}</div></div>
-    <div className="rp-cards"><article><span>Total Onchain Volume</span><strong>{compact(data?.totals?.volume, true)}</strong><small>{period.toUpperCase()} · {coverageText('volume')}</small></article><article><span>Total Holders</span><strong>{compact(data?.totals?.holders)}</strong><small>Latest daily snapshot · {coverageText('holders')}</small></article></div>
+    <div className="rp-heading"><div><span className="rp-eyebrow">REAL-WORLD ASSET PULSE</span><h1>RWA Pulse</h1><p>Track where onchain volume and holders are moving.</p></div><span className="rp-status">{loading ? 'Loading' : data?.coverage?.volume === 5 && data?.coverage?.holders === 5 ? 'Latest snapshot' : data?.available ? 'Partial coverage' : 'Awaiting data'}</span></div>
+    <div className="rp-controls"><div aria-label="Asset category">{[['rwa', 'RWA Market'], ['stocks', 'Tokenized Stocks']].map(([key, label]) => <button key={key} aria-pressed={market === key} onClick={() => setMarket(key)}>{label}</button>)}</div><div aria-label="Time range"><span className="rp-status">30D snapshot</span></div></div>
+    <div className="rp-cards"><article><span>Total Token Transfer Volume</span><strong>{compact(data?.totals?.volume, true)}</strong><small>{period.toUpperCase()} · {coverageText('volume')}</small></article><article><span>Total Holders</span><strong>{compact(data?.totals?.holders)}</strong><small>Latest reported snapshot · {coverageText('holders')}</small></article></div>
     {data?.message && <p className="rp-notice" role="status">{data.message}</p>}
-    <article className="rp-chart"><div className="rp-chart-heading"><h2>Onchain Volume by chain</h2><span>{period.toUpperCase()} · Complete UTC days</span></div><VolumeChart data={data} /><div className="rp-chain-values">{chains.map((c) => <div key={c.name}><Logo chain={c} /><span>{c.name}</span><strong>{compact(data?.chains?.find((d) => d.chain === c.name)?.volume, true)}</strong></div>)}</div></article>
-    <article className="rp-chart"><div className="rp-chart-heading"><h2>Holders by chain</h2><span>{period.toUpperCase()} · Daily snapshots</span></div><HoldersChart data={data} visible={visible} /><div className="rp-legend">{chains.map((c) => <button key={c.name} aria-pressed={visible.has(c.name)} onClick={() => toggle(c.name)} style={{ '--chain-color': c.color }}><Logo chain={c} /><span>{c.name}</span><strong>{compact(data?.chains?.find((d) => d.chain === c.name)?.holders)}</strong></button>)}</div></article>
-    <p className="rp-footnote">Holders are addresses per chain. The same owner may hold assets on more than one chain.{data?.updated ? ` Updated ${new Date(data.updated).toLocaleString('en-US', { timeZone: 'UTC' })} UTC.` : ''}</p>
+    <article className="rp-chart"><div className="rp-chart-heading"><h2>Token Transfer Volume by chain</h2><span>{period.toUpperCase()} · Rolling transfer volume</span></div><VolumeChart data={data} /><div className="rp-chain-values">{chains.map((c) => <div key={c.name}><Logo chain={c} /><span>{c.name}</span><strong>{compact(data?.chains?.find((d) => d.chain === c.name)?.volume, true)}</strong></div>)}</div></article>
+    <article className="rp-chart"><div className="rp-chart-heading"><h2>Holders by chain</h2><span>{period.toUpperCase()} · Available snapshots</span></div><HoldersChart data={data} visible={visible} /><div className="rp-legend">{chains.map((c) => <button key={c.name} aria-pressed={visible.has(c.name)} onClick={() => toggle(c.name)} style={{ '--chain-color': c.color }}><Logo chain={c} /><span>{c.name}</span><strong>{compact(data?.chains?.find((d) => d.chain === c.name)?.holders)}</strong></button>)}</div></article>
+    <p className="rp-footnote">{data?.methodology || 'Holder counts are not unique people or deduplicated wallets.'}{data?.updated ? ` Updated ${new Date(data.updated).toLocaleString('en-US', { timeZone: 'UTC' })} UTC.` : ''}</p>
   </section>;
 }
